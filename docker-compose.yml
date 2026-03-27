@@ -1,0 +1,51 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Excel AI Copilot — Docker Compose
+#
+# Use this to test the production Docker container locally before deploying.
+# This is NOT used for day-to-day development (use `npm run dev` + uvicorn).
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in LLM_API_KEY (and other secrets)
+#   2. Set FRONTEND_URL to the URL you'll access the app on
+#   3. docker compose up --build
+#   4. Open https://localhost:8080/taskpane.html  (self-signed cert warning — OK)
+#
+# For local Docker testing, FRONTEND_URL=https://localhost:8080 works fine
+# (the container serves both frontend and backend on the same port).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Baked into manifest.xml at build time.
+        # Change this to your OpenShift route URL before deploying to OpenShift.
+        FRONTEND_URL: ${FRONTEND_URL:-https://localhost:8080}
+    ports:
+      - "8080:8080"
+    environment:
+      # ── LLM provider (required) ─────────────────────────────────────────────
+      LLM_MODEL: ${LLM_MODEL:-claude-sonnet-4-20250514}
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY must be set in .env}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_VERSION: ${LLM_API_VERSION:-}
+
+      # ── Generation params ───────────────────────────────────────────────────
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-4096}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
+
+      # ── Deployment mode ─────────────────────────────────────────────────────
+      OPENSHIFT: "true"
+      SERVE_STATIC: "true"
+      STATIC_DIR: "./static"
+      PORT: "8080"
+      DEBUG: "false"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

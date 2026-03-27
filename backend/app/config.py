@@ -48,9 +48,22 @@ class Settings(BaseSettings):
 
     # ── Server ────────────────────────────────────────────────────────────────
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8000          # Override with PORT env var (e.g. PORT=8080 for OpenShift)
     cors_origins: list[str] = ["https://localhost:3000", "https://localhost:3001"]
     debug: bool = True
+
+    # ── Deployment mode ───────────────────────────────────────────────────────
+    # Set OPENSHIFT=true in production to switch to production defaults.
+    # Individual settings below can still be overridden independently.
+    openshift: bool = False
+
+    # Serve the built React frontend as static files from this FastAPI process.
+    # Automatically enabled when OPENSHIFT=true (can be overridden with SERVE_STATIC=false).
+    serve_static: bool = False
+
+    # Directory containing the built frontend (output of `npm run build`).
+    # In Docker this is ./static (copied from frontend/dist in the build stage).
+    static_dir: str = "./static"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

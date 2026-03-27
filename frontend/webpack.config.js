@@ -4,6 +4,12 @@ const CopyWebpackPlugin = require("copy-webpack-plugin");
 
 const devServerPort = 3000;
 
+// The public URL where the add-in frontend will be served.
+// In local dev this is always https://localhost:3000 (webpack-dev-server).
+// In Docker/OpenShift builds, pass FRONTEND_URL=https://your-app.example.com
+// so the correct URL gets baked into manifest.xml at build time.
+const FRONTEND_URL = process.env.FRONTEND_URL || `https://localhost:${devServerPort}`;
+
 module.exports = (env, argv) => {
   const isDev = argv.mode === "development";
 
@@ -52,8 +58,21 @@ module.exports = (env, argv) => {
         chunks: ["commands"],
       }),
       new CopyWebpackPlugin({
-        patterns: [{ from: "manifest.xml", to: "manifest.xml" },
-        {from: "public/assets", to: "assets" },]
+        patterns: [
+          {
+            from: "manifest.xml",
+            to: "manifest.xml",
+            // Replace all localhost:3000 references with the target URL.
+            // In dev builds FRONTEND_URL === "https://localhost:3000" so nothing changes.
+            // In Docker builds FRONTEND_URL is the real OpenShift/production URL.
+            transform(content) {
+              return content
+                .toString()
+                .replace(/https:\/\/localhost:3000/g, FRONTEND_URL);
+            },
+          },
+          { from: "public/assets", to: "assets" },
+        ],
       }),
     ],
     devServer: {
