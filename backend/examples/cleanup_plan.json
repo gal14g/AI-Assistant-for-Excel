@@ -1,0 +1,43 @@
+{
+  "planId": "example-cleanup-001",
+  "createdAt": "2025-07-01T11:30:00Z",
+  "userRequest": "Clean up the names in column A: trim whitespace, proper case, then remove duplicates",
+  "summary": "Clean up text in column A by trimming whitespace and converting to proper case, then remove duplicate rows.",
+  "steps": [
+    {
+      "id": "step_1",
+      "description": "Read column A to determine the data range",
+      "action": "readRange",
+      "params": {
+        "range": "A1:A500",
+        "includeHeaders": true
+      }
+    },
+    {
+      "id": "step_2",
+      "description": "Trim whitespace and convert to proper case in column A",
+      "action": "cleanupText",
+      "params": {
+        "range": "A2:A500",
+        "operations": ["trim", "normalizeWhitespace", "properCase"]
+      },
+      "dependsOn": ["step_1"]
+    },
+    {
+      "id": "step_3",
+      "description": "Remove duplicate rows based on the cleaned column A values",
+      "action": "removeDuplicates",
+      "params": {
+        "range": "A1:A500",
+        "columnIndexes": [0]
+      },
+      "dependsOn": ["step_2"]
+    }
+  ],
+  "preserveFormatting": true,
+  "confidence": 0.92,
+  "warnings": [
+    "Row count estimated at 500; cleanup will process all non-empty cells in the range",
+    "Cleanup modifies values in-place; original values will be snapshotted for undo"
+  ]
+}

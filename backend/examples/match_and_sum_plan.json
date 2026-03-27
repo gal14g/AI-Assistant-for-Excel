@@ -1,0 +1,61 @@
+{
+  "planId": "example-match-sum-001",
+  "createdAt": "2025-07-01T10:30:00Z",
+  "userRequest": "First take everything in column B:B and match with every record in Sheet1!A:A, then take everything in column A:A and sum it based on corresponding Sheet1!B:B",
+  "summary": "Match records from column B against Sheet1 column A using XLOOKUP, then create SUMIF formulas to aggregate values in column A grouped by Sheet1 column B categories.",
+  "steps": [
+    {
+      "id": "step_1",
+      "description": "Read the active sheet data to understand the structure and row count",
+      "action": "readRange",
+      "params": {
+        "range": "A1:B100",
+        "includeHeaders": true
+      }
+    },
+    {
+      "id": "step_2",
+      "description": "Match each value in column B against Sheet1 column A using XLOOKUP formulas",
+      "action": "matchRecords",
+      "params": {
+        "lookupRange": "B2:B100",
+        "sourceRange": "Sheet1!A:A",
+        "returnColumns": [1, 2],
+        "matchType": "exact",
+        "outputRange": "C2:D100",
+        "preferFormula": true
+      },
+      "dependsOn": ["step_1"]
+    },
+    {
+      "id": "step_3",
+      "description": "Read Sheet1 data to find unique categories in column B for grouping",
+      "action": "readRange",
+      "params": {
+        "range": "Sheet1!A1:B100",
+        "includeHeaders": true
+      }
+    },
+    {
+      "id": "step_4",
+      "description": "Create SUMIF formulas to sum column A values grouped by their matching Sheet1 column B categories",
+      "action": "groupSum",
+      "params": {
+        "dataRange": "A1:A100",
+        "groupByColumn": 1,
+        "sumColumn": 1,
+        "outputRange": "F1:G20",
+        "preferFormula": true,
+        "includeHeaders": true
+      },
+      "dependsOn": ["step_2", "step_3"]
+    }
+  ],
+  "preserveFormatting": true,
+  "confidence": 0.85,
+  "warnings": [
+    "Row count estimated at 100; actual data may be shorter or longer",
+    "XLOOKUP requires Excel 365 or Excel 2021+; falls back to VLOOKUP on older versions",
+    "Output ranges C:D and F:G assumed to be empty; existing data will be overwritten"
+  ]
+}
