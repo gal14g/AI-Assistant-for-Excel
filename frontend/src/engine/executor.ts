@@ -202,7 +202,7 @@ function extractRangesFromParams(step: PlanStep): string[] {
   const ranges: string[] = [];
 
   // Check common range field names
-  for (const key of ["range", "outputRange", "cell", "destinationRange"]) {
+  for (const key of ["range", "outputRange", "cell", "destinationRange", "lookupRange", "sourceRange", "dataRange"]) {
     if (typeof params[key] === "string") {
       ranges.push(params[key] as string);
     }

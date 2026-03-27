@@ -22,5 +22,9 @@ import "./freezePanes";
 import "./findReplace";
 import "./sheetOps";
 import "./validation";
+import "./autoFitColumns";
+import "./mergeCells";
+import "./setNumberFormat";
+import "./insertDeleteRows";
 
 export { registry } from "../capabilityRegistry";

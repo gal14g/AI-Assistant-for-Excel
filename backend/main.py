@@ -36,7 +36,9 @@ cors_origins = ["*"] if settings.openshift else settings.cors_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_credentials=not settings.openshift,  # credentials + wildcard origin is invalid
+    # allow_credentials=True is invalid with allow_origins=["*"] (browser rejects it).
+    # In OpenShift mode the frontend is same-origin so credentials aren't needed.
+    allow_credentials=False if settings.openshift else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

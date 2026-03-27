@@ -48,29 +48,11 @@ async function handler(
   range.formulas = [[formula]];
   await context.sync();
 
-  // Optionally fill down
+  // Optionally fill down — autoFill adjusts relative references automatically
   if (fillDown && fillDown > 1) {
     options.onProgress?.(`Filling formula down ${fillDown} rows...`);
-
-    // Get the column letter and row from the cell reference
-    const sheet = getSheet(context, cell);
-    const cellRef = cell.includes("!") ? cell.split("!")[1] : cell;
-
-    // Expand range to include fill-down rows
-    const startCell = sheet.getRange(cellRef);
-    const fillRange = startCell.getResizedRange(fillDown - 1, 0);
-    fillRange.load("address");
-    await context.sync();
-
-    // Use fill down
-    startCell.copyFrom(startCell, Excel.RangeCopyType.formulas);
-    const fullRange = sheet.getRange(fillRange.address);
-    fullRange.load("address");
-    await context.sync();
-
-    // Actually do the fill: set formula on first cell, then auto-fill
-    const targetRange = sheet.getRange(fillRange.address);
-    startCell.autoFill(targetRange, Excel.AutoFillType.fillDefault);
+    const fillRange = range.getResizedRange(fillDown - 1, 0);
+    range.autoFill(fillRange, Excel.AutoFillType.fillDefault);
     await context.sync();
 
     return {
@@ -88,15 +70,6 @@ async function handler(
 }
 
 
-function getSheet(context: Excel.RequestContext, address: string): Excel.Worksheet {
-  if (address.includes("!")) {
-    const idx = address.lastIndexOf("!");
-    let sheet = address.substring(0, idx);
-    if (sheet.startsWith("'") && sheet.endsWith("'")) sheet = sheet.slice(1, -1);
-    return context.workbook.worksheets.getItem(sheet);
-  }
-  return context.workbook.worksheets.getActiveWorksheet();
-}
 
 registry.register(meta, handler as any);
 export { meta };

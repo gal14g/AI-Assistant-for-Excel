@@ -42,7 +42,7 @@ async function handler(
   range.load("values");
   await context.sync();
 
-  const values = range.values;
+  const values = range.values ?? [];
   let replacements = 0;
 
   const findStr = matchCase ? find : find.toLowerCase();

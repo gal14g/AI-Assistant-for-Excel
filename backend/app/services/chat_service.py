@@ -108,6 +108,8 @@ OPTIONAL PARAMS — many params have smart defaults, so you can omit them:
 - createTable: only range is required; tableName is optional (auto-generated)
 - sortRange: only range is required; sortFields defaults to first column ascending
 - matchRecords: returnColumns defaults to column 1 of sourceRange
+- autoFitColumns: range is optional — omit to auto-fit all used columns on the active sheet
+- setNumberFormat: common formats: "#,##0.00" (number), "0%" (percent), "dd/mm/yyyy" (date), "$#,##0.00" (USD), "General" (reset)
 
 EXAMPLES OF responseType "message":
 - "What can you do?" → explain capabilities

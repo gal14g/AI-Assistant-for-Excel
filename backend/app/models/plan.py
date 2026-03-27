@@ -38,6 +38,7 @@ class StepAction(str, Enum):
     autoFitColumns = "autoFitColumns"
     mergeCells = "mergeCells"
     setNumberFormat = "setNumberFormat"
+    insertDeleteRows = "insertDeleteRows"
 
 
 # --- Step parameter models ---
@@ -211,6 +212,11 @@ class SetNumberFormatParams(BaseModel):
     format: str  # e.g. "#,##0.00", "0%", "dd/mm/yyyy"
 
 
+class InsertDeleteRowsParams(BaseModel):
+    range: str
+    shiftDirection: str  # "down" | "up" | "right" | "left"
+
+
 # --- Plan step ---
 
 
@@ -263,4 +269,5 @@ ACTION_PARAM_MODELS: dict[StepAction, type[BaseModel]] = {
     StepAction.autoFitColumns:       AutoFitColumnsParams,
     StepAction.mergeCells:           MergeCellsParams,
     StepAction.setNumberFormat:      SetNumberFormatParams,
+    StepAction.insertDeleteRows:     InsertDeleteRowsParams,
 }

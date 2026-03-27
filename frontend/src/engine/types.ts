@@ -36,7 +36,8 @@ export type StepAction =
   | "protectSheet"
   | "autoFitColumns"
   | "mergeCells"
-  | "setNumberFormat";
+  | "setNumberFormat"
+  | "insertDeleteRows";
 
 // ---------------------------------------------------------------------------
 // Step parameter shapes – one per action
@@ -234,6 +235,18 @@ export interface SetNumberFormatParams {
   format: string; // e.g. "#,##0.00", "yyyy-mm-dd"
 }
 
+export interface InsertDeleteRowsParams {
+  /** The range that determines which rows/columns to insert or delete */
+  range: string;
+  /**
+   * "down"  → insert blank rows above (existing rows shift down)
+   * "up"    → delete rows (remaining rows shift up)
+   * "right" → insert blank columns to the left (existing shift right)
+   * "left"  → delete columns (remaining columns shift left)
+   */
+  shiftDirection: "down" | "up" | "right" | "left";
+}
+
 // ---------------------------------------------------------------------------
 // Union of all param types
 // ---------------------------------------------------------------------------
@@ -258,7 +271,8 @@ export type StepParams =
   | SheetOpParams
   | AutoFitColumnsParams
   | MergeCellsParams
-  | SetNumberFormatParams;
+  | SetNumberFormatParams
+  | InsertDeleteRowsParams;
 
 // ---------------------------------------------------------------------------
 // Plan step

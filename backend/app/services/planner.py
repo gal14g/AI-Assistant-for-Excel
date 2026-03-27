@@ -65,9 +65,10 @@ CAPABILITY_DESCRIPTIONS = {
     "deleteSheet": "Delete a worksheet. Params: sheetName",
     "copySheet": "Copy a worksheet. Params: sheetName, newName (optional)",
     "protectSheet":    "Protect a worksheet. Params: sheetName, password (optional)",
-    "autoFitColumns":  "Auto-fit column widths to their content. Params: range (optional), sheetName (optional)",
-    "mergeCells":      "Merge cells in a range. Params: range (string), mergeType ('merge'|'mergeAcross'|'mergeAllCells', optional)",
-    "setNumberFormat": "Apply a number format to a range. Params: range (string), format (format string e.g. '#,##0.00', '0%', 'dd/mm/yyyy')",
+    "autoFitColumns":    "Auto-fit column widths to their content. Params: range (optional — omit to fit all used columns), sheetName (optional)",
+    "mergeCells":        "Merge cells in a range. Params: range (string), across (bool — true merges each row separately, false merges everything into one cell)",
+    "setNumberFormat":   "Apply a number format to a range. Params: range (string), format (e.g. '#,##0.00', '0%', 'dd/mm/yyyy', '$#,##0.00', 'General')",
+    "insertDeleteRows":  "Insert or delete rows/columns. Params: range (determines which rows/columns and how many), shiftDirection ('down'=insert rows above, 'up'=delete rows, 'right'=insert columns left, 'left'=delete columns)",
 }
 
 
