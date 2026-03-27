@@ -15,6 +15,7 @@
  */
 
 import { CellSnapshot, PlanSnapshot } from "./types";
+import { resolveRange } from "./capabilities/rangeUtils";
 
 /** In-memory stack of snapshots. Most recent at the end. */
 const snapshotStack: PlanSnapshot[] = [];
@@ -83,20 +84,31 @@ export async function captureSnapshotBatched(
   planId: string,
   rangeAddresses: string[]
 ): Promise<PlanSnapshot> {
-  const ranges: Excel.Range[] = [];
+  // For each address, get only the used portion to avoid loading 1M rows for
+  // full-column references like "Sheet1!A:A".
+  // resolveRange handles workbook-qualified addresses correctly.
+  const usedRanges: Excel.Range[] = [];
 
   for (const address of rangeAddresses) {
-    // Parse sheet name from address if present (e.g. "Sheet1!A1:B5")
-    const sheet = parseSheetFromAddress(address, context);
-    const rangeRef = address.includes("!") ? address.split("!")[1] : address;
-    const range = sheet.getRange(rangeRef);
-    range.load(["values", "numberFormat", "address"]);
-    ranges.push(range);
+    try {
+      const rng = resolveRange(context, address);
+      // getUsedRange() (no args) includes formatting-only cells; safe on empty ranges
+      const used = rng.getUsedRange(false);
+      used.load(["values", "numberFormat", "address"]);
+      usedRanges.push(used);
+    } catch {
+      // If the range can't be resolved, skip snapshotting it
+    }
   }
 
-  await context.sync();
+  try {
+    await context.sync();
+  } catch {
+    // If any range failed (e.g. empty sheet), clear it out so we still proceed
+    usedRanges.length = 0;
+  }
 
-  const cells: CellSnapshot[] = ranges.map((range) => ({
+  const cells: CellSnapshot[] = usedRanges.map((range) => ({
     range: range.address,
     values: range.values as (string | number | boolean | null)[][],
     numberFormats: range.numberFormat as string[][],
@@ -191,13 +203,17 @@ function parseSheetFromAddress(
   address: string,
   context: Excel.RequestContext
 ): Excel.Worksheet {
-  if (address.includes("!")) {
-    let sheetName = address.split("!")[0];
-    // Remove surrounding quotes if present (e.g. "'My Sheet'!A1")
-    if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
-      sheetName = sheetName.slice(1, -1);
-    }
-    return context.workbook.worksheets.getItem(sheetName);
+  if (!address.includes("!")) {
+    return context.workbook.worksheets.getActiveWorksheet();
   }
-  return context.workbook.worksheets.getActiveWorksheet();
+  const bangIdx = address.lastIndexOf("!");
+  let sheetPart = address.substring(0, bangIdx);
+  // Strip workbook qualifier: "[WorkbookName.xlsx]Sheet1" → "Sheet1"
+  const wbMatch = sheetPart.match(/^\[.*?\](.+)$/);
+  if (wbMatch) sheetPart = wbMatch[1];
+  // Strip surrounding quotes: "'My Sheet'" → "My Sheet"
+  if (sheetPart.startsWith("'") && sheetPart.endsWith("'")) {
+    sheetPart = sheetPart.slice(1, -1);
+  }
+  return context.workbook.worksheets.getItem(sheetPart);
 }
