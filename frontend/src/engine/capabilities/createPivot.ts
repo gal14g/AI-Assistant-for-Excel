@@ -40,8 +40,8 @@ async function handler(
   sourceRng.load("values");
   await context.sync();
 
-  const firstRow = sourceRng.values[0] as (string | number | boolean)[];
-  const headers = firstRow.map((h) => String(h)).filter(Boolean);
+  const firstRow = (sourceRng.values ?? [])[0] as (string | number | boolean)[] | undefined;
+  const headers = (firstRow ?? []).map((h) => String(h)).filter(Boolean);
 
   if (headers.length === 0) {
     return { stepId: "", status: "error", message: "Source range has no headers." };

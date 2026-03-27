@@ -40,7 +40,7 @@ async function handler(
   range.load("values");
   await context.sync();
 
-  const values = range.values;
+  const values = range.values ?? [];
   options.onProgress?.(`Cleaning ${values.length} rows...`);
 
   // Apply each operation sequentially

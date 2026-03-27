@@ -142,7 +142,7 @@ async function formulaMatch(
     checkCell.load("values");
     await context.sync();
 
-    const firstVal = checkCell.values[0][0];
+    const firstVal = checkCell.values?.[0]?.[0];
     xlookupAvailable = firstVal !== "#NAME?";
 
     if (!xlookupAvailable) {
@@ -183,8 +183,8 @@ async function computedMatch(
   sourceRng.load("values");
   await context.sync();
 
-  const lookupValues = lookupRng.values;
-  const sourceValues = sourceRng.values;
+  const lookupValues = lookupRng.values ?? [];
+  const sourceValues = sourceRng.values ?? [];
   const { returnColumns } = params;
 
   options.onProgress?.("Matching records...");

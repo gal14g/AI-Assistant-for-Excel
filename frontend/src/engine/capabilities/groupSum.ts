@@ -51,7 +51,7 @@ async function formulaGroupSum(
   dataRng.load("values");
   await context.sync();
 
-  const data = dataRng.values;
+  const data = dataRng.values ?? [];
   const startRow = params.includeHeaders ? 1 : 0;
 
   // Extract unique group keys
@@ -116,7 +116,7 @@ async function computedGroupSum(
   dataRng.load("values");
   await context.sync();
 
-  const data = dataRng.values;
+  const data = dataRng.values ?? [];
   const startRow = params.includeHeaders ? 1 : 0;
   const groupCol = params.groupByColumn - 1;
   const sumCol = params.sumColumn - 1;
