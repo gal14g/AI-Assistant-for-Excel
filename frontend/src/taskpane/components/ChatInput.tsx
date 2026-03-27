@@ -104,14 +104,14 @@ export const ChatInput: React.FC<Props> = ({
   const canSend = !disabled && text.trim().length > 0;
 
   return (
-    <div style={{ borderTop: "1px solid #e0e0e0", backgroundColor: "#fff", padding: "10px 12px" }}>
+    <div style={{ boxShadow: "0 -1px 0 #e8e8e8", backgroundColor: "#ffffff", padding: "10px 12px" }}>
 
       {/* Live selection hint */}
       {currentSelectionAddress && (
         <div
           style={{
             fontSize: 11,
-            color: "#217346",
+            color: "#5b5fc7",
             marginBottom: 4,
             fontFamily: "monospace",
             display: "flex",
@@ -137,7 +137,7 @@ export const ChatInput: React.FC<Props> = ({
           style={{
             flex: 1,
             padding: "8px 12px",
-            border: "1px solid #ddd",
+            border: "1px solid #e0e0e0",
             borderRadius: 8,
             fontSize: 13,
             fontFamily: "inherit",
@@ -154,7 +154,7 @@ export const ChatInput: React.FC<Props> = ({
             padding: "8px 16px",
             border: "none",
             borderRadius: 8,
-            backgroundColor: canSend ? "#217346" : "#ccc",
+            backgroundColor: canSend ? "#0f6cbd" : "#c8c6c4",
             color: "#fff",
             fontSize: 13,
             fontWeight: 600,

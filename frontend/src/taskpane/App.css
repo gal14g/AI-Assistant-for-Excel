@@ -45,8 +45,8 @@ body {
 
 /* Textarea focus state */
 textarea:focus {
-  border-color: #217346 !important;
-  box-shadow: 0 0 0 2px rgba(33, 115, 70, 0.15);
+  border-color: #0f6cbd !important;
+  box-shadow: 0 0 0 2px rgba(15, 108, 189, 0.15);
 }
 
 /* Button hover states */
@@ -56,4 +56,9 @@ button:hover:not(:disabled) {
 
 button:active:not(:disabled) {
   transform: scale(0.98);
+}
+
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
 }

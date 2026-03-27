@@ -1,5 +1,5 @@
 /**
- * PlanPreview – Shows a plan before execution with Preview/Run/Cancel buttons.
+ * PlanPreview – Action card shown before executing a plan. Microsoft Copilot style.
  */
 
 import React from "react";
@@ -18,192 +18,141 @@ interface Props {
   canUndo: boolean;
 }
 
+const ACTION_LABELS: Record<string, string> = {
+  readRange: "Read", writeValues: "Write values", writeFormula: "Write formula",
+  matchRecords: "Match records", groupSum: "Group & sum", createTable: "Create table",
+  applyFilter: "Apply filter", sortRange: "Sort", createPivot: "Create pivot",
+  createChart: "Create chart", addConditionalFormat: "Conditional format",
+  cleanupText: "Clean text", removeDuplicates: "Remove duplicates",
+  freezePanes: "Freeze panes", findReplace: "Find & replace",
+  addValidation: "Add validation", addSheet: "Add sheet",
+  renameSheet: "Rename sheet", deleteSheet: "Delete sheet",
+  copySheet: "Copy sheet", protectSheet: "Protect sheet",
+  autoFitColumns: "Auto-fit", mergeCells: "Merge cells",
+  setNumberFormat: "Number format",
+};
+
 export const PlanPreview: React.FC<Props> = ({
-  plan,
-  validation,
-  isExecuting,
-  isPreviewing,
-  onPreview,
-  onRun,
-  onCancel,
-  onUndo,
-  canUndo,
+  plan, validation, isExecuting, isPreviewing,
+  onPreview, onRun, onCancel, onUndo, canUndo,
 }) => {
+  const hasErrors = validation && !validation.valid;
+  const hasWarnings = (validation?.warnings.length ?? 0) > 0 || (plan.warnings?.length ?? 0) > 0;
+
   return (
-    <div
-      style={{
-        padding: 14,
-        backgroundColor: "#fff",
-        borderRadius: 8,
-        border: "1px solid #217346",
-        boxShadow: "0 2px 8px rgba(33,115,70,0.12)",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 10,
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: 14, color: "#217346" }}>
-          Execution Plan
-        </span>
-        <span
-          style={{
-            fontSize: 11,
-            color: "#666",
-            padding: "2px 6px",
-            backgroundColor: "#f0f0f0",
-            borderRadius: 4,
-          }}
-        >
-          {plan.steps.length} step(s) | confidence: {Math.round(plan.confidence * 100)}%
+    <div style={{
+      backgroundColor: "#ffffff",
+      borderRadius: 12,
+      border: "1px solid #e8e8e8",
+      overflow: "hidden",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+    }}>
+      {/* Card header */}
+      <div style={{
+        padding: "12px 16px",
+        borderBottom: "1px solid #f0f0f0",
+        background: "linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%)",
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 16 }}>⚡</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "#242424" }}>
+            {plan.summary}
+          </span>
+        </div>
+        <span style={{
+          fontSize: 11, color: "#5b5fc7", fontWeight: 600,
+          backgroundColor: "#ede7f6", padding: "2px 8px", borderRadius: 10,
+        }}>
+          {plan.steps.length} step{plan.steps.length !== 1 ? "s" : ""} · {Math.round(plan.confidence * 100)}% confidence
         </span>
       </div>
 
-      {/* Summary */}
-      <div style={{ fontSize: 13, color: "#333", marginBottom: 10 }}>
-        {plan.summary}
-      </div>
-
-      {/* Steps list */}
-      <div
-        style={{
-          marginBottom: 12,
-          padding: "8px 10px",
-          backgroundColor: "#f8f9fa",
-          borderRadius: 6,
-          fontSize: 12,
-        }}
-      >
+      {/* Steps */}
+      <div style={{ padding: "10px 16px" }}>
         {plan.steps.map((step, i) => (
-          <div
-            key={step.id}
-            style={{
-              display: "flex",
-              gap: 8,
-              padding: "4px 0",
-              borderBottom:
-                i < plan.steps.length - 1 ? "1px solid #eee" : "none",
-            }}
-          >
-            <span style={{ color: "#217346", fontWeight: 600, minWidth: 20 }}>
-              {i + 1}.
-            </span>
+          <div key={step.id} style={{
+            display: "flex", gap: 10, alignItems: "flex-start",
+            padding: "6px 0",
+            borderBottom: i < plan.steps.length - 1 ? "1px solid #f5f5f5" : "none",
+          }}>
+            <div style={{
+              width: 22, height: 22, borderRadius: "50%",
+              backgroundColor: "#f0f4ff", color: "#5b5fc7",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 11, fontWeight: 700, flexShrink: 0,
+            }}>
+              {i + 1}
+            </div>
             <div style={{ flex: 1 }}>
-              <span style={{ color: "#333" }}>{step.description}</span>
-              <span
-                style={{
-                  marginLeft: 6,
-                  fontSize: 10,
-                  color: "#888",
-                  fontFamily: "monospace",
-                }}
-              >
-                ({step.action})
+              <span style={{ fontSize: 13, color: "#242424" }}>{step.description}</span>
+              <span style={{
+                marginLeft: 6, fontSize: 10, color: "#ffffff",
+                backgroundColor: "#5b5fc7", padding: "1px 6px", borderRadius: 4,
+                fontWeight: 500,
+              }}>
+                {ACTION_LABELS[step.action] ?? step.action}
               </span>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Validation messages */}
-      {validation && (
-        <div style={{ marginBottom: 10, fontSize: 12 }}>
-          {validation.errors.map((e, i) => (
-            <div key={i} style={{ color: "#e53935", marginBottom: 2 }}>
-              Error: {e.message}
+      {/* Validation / warnings */}
+      {(hasErrors || hasWarnings) && (
+        <div style={{ padding: "8px 16px", borderTop: "1px solid #f0f0f0" }}>
+          {validation?.errors.map((e, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", color: "#c50f1f", fontSize: 12, marginBottom: 3 }}>
+              <span>✕</span><span>{e.message}</span>
             </div>
           ))}
-          {validation.warnings.map((w, i) => (
-            <div key={i} style={{ color: "#ff9800", marginBottom: 2 }}>
-              Warning: {w.message}
+          {validation?.warnings.map((w, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", color: "#c47f17", fontSize: 12, marginBottom: 3 }}>
+              <span>⚠</span><span>{w.message}</span>
             </div>
           ))}
-          {validation.valid && validation.errors.length === 0 && (
-            <div style={{ color: "#4caf50" }}>Validation passed</div>
-          )}
-        </div>
-      )}
-
-      {/* Warnings from planner */}
-      {plan.warnings && plan.warnings.length > 0 && (
-        <div style={{ marginBottom: 10, fontSize: 12 }}>
-          {plan.warnings.map((w, i) => (
-            <div key={i} style={{ color: "#ff9800" }}>
-              Note: {w}
+          {plan.warnings?.map((w, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", color: "#c47f17", fontSize: 12, marginBottom: 3 }}>
+              <span>⚠</span><span>{w}</span>
             </div>
           ))}
         </div>
       )}
 
-      {/* Formatting preservation indicator */}
-      <div style={{ fontSize: 11, color: "#666", marginBottom: 12 }}>
-        {plan.preserveFormatting
-          ? "Formatting will be preserved"
-          : "This plan may modify formatting"}
+      {/* Status line */}
+      <div style={{ padding: "4px 16px 10px", fontSize: 11, color: "#616161", display: "flex", gap: 12 }}>
+        {validation?.valid && <span style={{ color: "#107c10" }}>✓ Validation passed</span>}
+        {plan.preserveFormatting && <span>Formatting will be preserved</span>}
       </div>
 
       {/* Action buttons */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
-          onClick={onPreview}
-          disabled={isPreviewing || isExecuting}
-          style={{
-            ...buttonStyle,
-            backgroundColor: "#7b1fa2",
-            opacity: isPreviewing || isExecuting ? 0.5 : 1,
-          }}
-        >
-          {isPreviewing ? "Previewing..." : "Preview"}
+      <div style={{ padding: "10px 16px 14px", display: "flex", gap: 8, borderTop: "1px solid #f0f0f0" }}>
+        <button onClick={onRun} disabled={isExecuting || isPreviewing} style={primaryBtn(isExecuting || isPreviewing)}>
+          {isExecuting ? "Applying…" : "Apply"}
         </button>
-        <button
-          onClick={onRun}
-          disabled={isExecuting || isPreviewing}
-          style={{
-            ...buttonStyle,
-            backgroundColor: "#4caf50",
-            opacity: isExecuting || isPreviewing ? 0.5 : 1,
-          }}
-        >
-          {isExecuting ? "Running..." : "Run Plan"}
-        </button>
-        <button
-          onClick={onCancel}
-          disabled={isExecuting}
-          style={{
-            ...buttonStyle,
-            backgroundColor: "#666",
-          }}
-        >
-          Cancel
+        <button onClick={onPreview} disabled={isPreviewing || isExecuting} style={secondaryBtn(isPreviewing || isExecuting)}>
+          {isPreviewing ? "Previewing…" : "Preview"}
         </button>
         {canUndo && (
-          <button
-            onClick={onUndo}
-            style={{
-              ...buttonStyle,
-              backgroundColor: "#ff9800",
-            }}
-          >
-            Undo Last
-          </button>
+          <button onClick={onUndo} style={secondaryBtn(false)}>Undo</button>
         )}
+        <button onClick={onCancel} disabled={isExecuting} style={{ ...secondaryBtn(isExecuting), marginLeft: "auto" }}>
+          Dismiss
+        </button>
       </div>
     </div>
   );
 };
 
-const buttonStyle: React.CSSProperties = {
-  padding: "8px 16px",
-  border: "none",
-  borderRadius: 6,
-  color: "#fff",
-  fontSize: 13,
-  fontWeight: 500,
-  cursor: "pointer",
-  transition: "opacity 0.2s",
-};
+const primaryBtn = (disabled: boolean): React.CSSProperties => ({
+  padding: "7px 18px", border: "none", borderRadius: 6,
+  backgroundColor: disabled ? "#c8c6c4" : "#0f6cbd",
+  color: "#fff", fontSize: 13, fontWeight: 600,
+  cursor: disabled ? "default" : "pointer",
+});
+
+const secondaryBtn = (disabled: boolean): React.CSSProperties => ({
+  padding: "7px 14px", border: "1px solid #d1d1d1", borderRadius: 6,
+  backgroundColor: "#ffffff", color: disabled ? "#a0a0a0" : "#242424",
+  fontSize: 13, fontWeight: 500, cursor: disabled ? "default" : "pointer",
+});
