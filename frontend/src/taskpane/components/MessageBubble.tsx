@@ -81,7 +81,7 @@ export const MessageBubble: React.FC<Props> = ({ message }) => {
 
   if (isSystem) {
     return (
-      <div style={{ textAlign: "center", padding: "6px 0 10px", color: "#616161", fontSize: 12 }}>
+      <div dir="auto" style={{ textAlign: "center", padding: "6px 0 10px", color: "#616161", fontSize: 12 }}>
         {message.content}
       </div>
     );
@@ -108,7 +108,7 @@ export const MessageBubble: React.FC<Props> = ({ message }) => {
           </div>
         )}
 
-        <div style={{ wordBreak: "break-word" }}>
+        <div style={{ wordBreak: "break-word" }} dir="auto">
           {renderMarkdown(message.content)}
         </div>
 
@@ -125,7 +125,7 @@ export const MessageBubble: React.FC<Props> = ({ message }) => {
               Plan: {message.plan.steps.length} step{message.plan.steps.length !== 1 ? "s" : ""}
             </div>
             {message.plan.steps.map((step, i) => (
-              <div key={step.id} style={{ color: "#424242", marginLeft: 4, marginBottom: 2 }}>
+              <div key={step.id} dir="auto" style={{ color: "#424242", marginLeft: 4, marginBottom: 2 }}>
                 {i + 1}. {step.description}
               </div>
             ))}

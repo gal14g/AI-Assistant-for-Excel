@@ -94,6 +94,20 @@ MULTI-STEP PLANS:
     - Add new sheet → write headers → create table → create pivot (4 steps)
     - Match records → sort result → add conditional formatting (3 steps)
     - Clean up column → remove duplicates → auto-fit columns (3 steps)
+    - DASHBOARD: addSheet("Dashboard") → createPivot → createChart → addConditionalFormat → autoFitColumns
+
+COMPLEX FORMULAS — writeFormula supports any Excel formula including:
+- Nested functions: =IF(ISNUMBER(MATCH(A2,Sheet2!A:A,0)),"Found","Not Found")
+- LAMBDA / LET: =LET(x, A2*1.2, IF(x>100, x, 0))
+- Dynamic arrays (Excel 365): =UNIQUE(A:A), =FILTER(A:B, B:B>0), =SORT(A:A)
+- Array formulas: =SUM(IF(A:A="X", B:B, 0)) — wrap in ARRAYFORMULA for older Excel
+- Lookup chains: =IFERROR(XLOOKUP(A2,Sheet2!A:A,Sheet2!C:C),VLOOKUP(A2,Sheet3!A:C,3,0))
+- When the user asks for a "complex formula" or "dynamic formula", use writeFormula
+
+PIVOT FIELD RULES:
+- rows and values accept either header names ("Department") or range addresses ("Sheet2!A:A")
+- ALWAYS include rows and values in createPivot when the user specifies them — never drop them
+- Example: user says "rows = [[Sheet2!A:A]]" → use rows: ["Sheet2!A:A"] (the handler resolves it)
 
 RANGE RULES (very important):
 - Every "range" param must be a SINGLE range address — never comma-separated multi-ranges
@@ -153,9 +167,13 @@ def _few_shot_examples() -> list[dict]:
         {"role": "user", "content": "create a bar chart from [[Sheet1!A1:B20]]"},
         {"role": "assistant", "content": '{"responseType":"plan","message":"I\'ll create a bar chart using the data in Sheet1!A1:B20.","plan":{"planId":"ex-chart-1","createdAt":"2024-01-01T00:00:00Z","userRequest":"create a bar chart from [[Sheet1!A1:B20]]","summary":"Create bar chart from Sheet1!A1:B20","steps":[{"id":"step_1","description":"Create a bar chart from the selected range","action":"createChart","params":{"dataRange":"Sheet1!A1:B20","chartType":"bar"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}'},
 
-        # 5. Pivot table minimal params
+        # 5a. Pivot table — auto-detect (user gives only source)
         {"role": "user", "content": "create a pivot table from [[Sheet1!A1:D50]]"},
         {"role": "assistant", "content": '{"responseType":"plan","message":"I\'ll create a PivotTable from the selected range. Fields will be auto-detected from the column headers.","plan":{"planId":"ex-pivot-1","createdAt":"2024-01-01T00:00:00Z","userRequest":"create a pivot table from [[Sheet1!A1:D50]]","summary":"Create PivotTable from Sheet1!A1:D50","steps":[{"id":"step_1","description":"Create PivotTable (rows and values auto-detected from headers)","action":"createPivot","params":{"sourceRange":"Sheet1!A1:D50"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.92,"warnings":[]}}'},
+
+        # 5b. Pivot table — user explicitly specifies rows and values via range tokens
+        {"role": "user", "content": "create a pivot from [[Sheet2!A1:D7]], set rows to [[Sheet2!A:A]] and values to sum of [[Sheet2!D:D]]"},
+        {"role": "assistant", "content": '{"responseType":"plan","message":"I\'ll create a PivotTable grouping by column A (rows) and summing column D values.","plan":{"planId":"ex-pivot-2","createdAt":"2024-01-01T00:00:00Z","userRequest":"create pivot from Sheet2!A1:D7, rows=Sheet2!A:A, values=sum Sheet2!D:D","summary":"PivotTable rows=col A, values=SUM col D","steps":[{"id":"step_1","description":"Create PivotTable with rows from column A and sum of column D as values","action":"createPivot","params":{"sourceRange":"Sheet2!A1:D7","rows":["Sheet2!A:A"],"values":[{"field":"Sheet2!D:D","summarizeBy":"sum"}]},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.97,"warnings":[]}}'},
 
         # 6. Multi-step: sort → chart
         {"role": "user", "content": "sort by column B descending then create a chart"},

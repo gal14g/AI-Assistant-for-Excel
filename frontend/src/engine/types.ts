@@ -37,7 +37,8 @@ export type StepAction =
   | "autoFitColumns"
   | "mergeCells"
   | "setNumberFormat"
-  | "insertDeleteRows";
+  | "insertDeleteRows"
+  | "addSparkline";
 
 // ---------------------------------------------------------------------------
 // Step parameter shapes – one per action
@@ -247,6 +248,17 @@ export interface InsertDeleteRowsParams {
   shiftDirection: "down" | "up" | "right" | "left";
 }
 
+export interface AddSparklineParams {
+  /** Data source range — one row per sparkline cell */
+  dataRange: string;
+  /** Where to place the sparklines (one cell per row of dataRange) */
+  locationRange: string;
+  /** Sparkline type — defaults to "line" */
+  sparklineType?: "line" | "column" | "winLoss";
+  /** Optional hex color, e.g. "#0f6cbd" */
+  color?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Union of all param types
 // ---------------------------------------------------------------------------
@@ -272,7 +284,8 @@ export type StepParams =
   | AutoFitColumnsParams
   | MergeCellsParams
   | SetNumberFormatParams
-  | InsertDeleteRowsParams;
+  | InsertDeleteRowsParams
+  | AddSparklineParams;
 
 // ---------------------------------------------------------------------------
 // Plan step

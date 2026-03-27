@@ -39,6 +39,7 @@ class StepAction(str, Enum):
     mergeCells = "mergeCells"
     setNumberFormat = "setNumberFormat"
     insertDeleteRows = "insertDeleteRows"
+    addSparkline = "addSparkline"
 
 
 # --- Step parameter models ---
@@ -217,6 +218,13 @@ class InsertDeleteRowsParams(BaseModel):
     shiftDirection: str  # "down" | "up" | "right" | "left"
 
 
+class AddSparklineParams(BaseModel):
+    dataRange: str
+    locationRange: str
+    sparklineType: Optional[str] = "line"  # "line" | "column" | "winLoss"
+    color: Optional[str] = None
+
+
 # --- Plan step ---
 
 
@@ -270,4 +278,5 @@ ACTION_PARAM_MODELS: dict[StepAction, type[BaseModel]] = {
     StepAction.mergeCells:           MergeCellsParams,
     StepAction.setNumberFormat:      SetNumberFormatParams,
     StepAction.insertDeleteRows:     InsertDeleteRowsParams,
+    StepAction.addSparkline:         AddSparklineParams,
 }

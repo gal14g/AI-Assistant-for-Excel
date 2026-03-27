@@ -52,7 +52,7 @@ CAPABILITY_DESCRIPTIONS = {
     "createTable": "Convert a range into an Excel Table. Params: range, tableName, hasHeaders (bool), style (optional string)",
     "applyFilter": "Apply filters to a table or range. Params: tableNameOrRange, columnIndex (0-based), criteria {filterOn, values, operator, value}",
     "sortRange": "Sort a range by columns. Params: range, sortFields [{columnIndex (0-based), ascending}], hasHeaders (bool)",
-    "createPivot": "Create a PivotTable. Params: sourceRange, destinationRange, pivotName, rows [field names], columns (optional), values [{field, summarizeBy, displayName}], filters (optional)",
+    "createPivot": "Create a PivotTable. Only sourceRange is required — everything else is auto-detected. rows/values fields accept EITHER header names ('Department') OR column range addresses ('Sheet2!A:A') — the handler resolves range addresses to header names automatically. Params: sourceRange (required), rows (optional list of field names or column refs), values (optional list of {field, summarizeBy} where field is a name or ref), columns (optional), filters (optional), destinationRange (optional — new sheet created if omitted), pivotName (optional)",
     "createChart": "Create a chart. Params: dataRange, chartType ('columnClustered'|'bar'|'line'|'pie'|'area'|'scatter'), title (optional), position (optional)",
     "addConditionalFormat": "Apply conditional formatting. Params: range, ruleType ('cellValue'|'colorScale'|'dataBar'|'iconSet'|'text'), operator, values, format {fillColor, fontColor, bold}",
     "cleanupText": "Clean up text values. Params: range, operations ['trim'|'lowercase'|'uppercase'|'properCase'|'removeNonPrintable'|'normalizeWhitespace'], outputRange (optional)",
@@ -69,6 +69,7 @@ CAPABILITY_DESCRIPTIONS = {
     "mergeCells":        "Merge cells in a range. Params: range (string), across (bool — true merges each row separately, false merges everything into one cell)",
     "setNumberFormat":   "Apply a number format to a range. Params: range (string), format (e.g. '#,##0.00', '0%', 'dd/mm/yyyy', '$#,##0.00', 'General')",
     "insertDeleteRows":  "Insert or delete rows/columns. Params: range (determines which rows/columns and how many), shiftDirection ('down'=insert rows above, 'up'=delete rows, 'right'=insert columns left, 'left'=delete columns)",
+    "addSparkline":      "Add sparkline mini-charts inside cells — ideal for dashboards showing trends. Params: dataRange (source data, one row per sparkline), locationRange (cells where sparklines appear), sparklineType ('line'|'column'|'winLoss', default 'line'), color (optional hex)",
 }
 
 

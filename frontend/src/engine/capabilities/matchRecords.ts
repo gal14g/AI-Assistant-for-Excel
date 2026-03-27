@@ -25,7 +25,7 @@ import {
   ExecutionOptions,
 } from "../types";
 import { registry } from "../capabilityRegistry";
-import { resolveRange, stripWorkbookQualifier } from "./rangeUtils";
+import { resolveRange, stripWorkbookQualifier, quoteSheetInRef } from "./rangeUtils";
 
 const meta: CapabilityMeta = {
   action: "matchRecords",
@@ -240,9 +240,11 @@ function buildXlookupFormulas(
   for (let row = 0; row < rowCount; row++) {
     const rowFormulas: string[] = [];
     for (const colIdx of returnColumns) {
-      const lookupCell = getRelCellRef(lookupAddr, row);
-      const lookupArr  = getColumnRef(sourceAddr, 0);
-      const returnArr  = getColumnRef(sourceAddr, colIdx - 1);
+      // quoteSheetInRef ensures Hebrew/non-ASCII sheet names are single-quoted
+      // in the formula string, e.g. "גיליון1!A:A" → "'גיליון1'!A:A"
+      const lookupCell = quoteSheetInRef(getRelCellRef(lookupAddr, row));
+      const lookupArr  = quoteSheetInRef(getColumnRef(sourceAddr, 0));
+      const returnArr  = quoteSheetInRef(getColumnRef(sourceAddr, colIdx - 1));
       rowFormulas.push(
         `=IFERROR(XLOOKUP(${lookupCell},${lookupArr},${returnArr},"",${matchMode}),"")`
       );
@@ -281,11 +283,12 @@ function buildVlookupFormulas(
   for (let row = 0; row < rowCount; row++) {
     const rowFormulas: string[] = [];
     for (const colIdx of returnColumns) {
-      const lookupCell = getRelCellRef(lookupAddr, row);
-      const retColFull = getColumnRef(sourceAddr, colIdx - 1); // e.g. "Sheet1!B:B"
+      const lookupCell = quoteSheetInRef(getRelCellRef(lookupAddr, row));
+      const retColFull = getColumnRef(sourceAddr, colIdx - 1); // e.g. "גיליון1!B:B"
       const retCol = columnLetterFromColRef(retColFull); // e.g. "B"
-      // table_array spans from key col to return col: e.g. "Sheet1!A:B"
-      const tableArray = `${sheetPrefix}${keyCol}:${retCol}`;
+      // table_array spans key col → return col; quote sheet name if Hebrew/non-ASCII
+      const rawTableArray = sheetPrefix ? `${sheetPrefix}${keyCol}:${retCol}` : `${keyCol}:${retCol}`;
+      const tableArray = quoteSheetInRef(rawTableArray);
       rowFormulas.push(
         `=IFERROR(VLOOKUP(${lookupCell},${tableArray},${colIdx},${exactMatch}),"")`
       );

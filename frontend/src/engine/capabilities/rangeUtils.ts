@@ -48,6 +48,36 @@ export function stripWorkbookQualifier(address: string): string {
 }
 
 /**
+ * Ensure the sheet name portion of a range reference is single-quoted
+ * when used inside an Excel formula string, which is required whenever
+ * the sheet name contains:
+ *   - Non-ASCII characters (Hebrew, Arabic, accented chars, etc.)
+ *   - Spaces
+ *   - Starts with a digit
+ *   - Any punctuation except underscore and dot
+ *
+ * Examples:
+ *   "Sheet1!A:A"       → "Sheet1!A:A"      (safe — unchanged)
+ *   "גיליון1!A:A"      → "'גיליון1'!A:A"   (Hebrew — must quote)
+ *   "My Sheet!A1"      → "'My Sheet'!A1"    (space — must quote)
+ *   "'Sheet1'!A:A"     → "'Sheet1'!A:A"     (already quoted — unchanged)
+ *   "A:A"              → "A:A"              (no sheet part — unchanged)
+ */
+export function quoteSheetInRef(ref: string): string {
+  const bangIdx = ref.lastIndexOf("!");
+  if (bangIdx === -1) return ref; // no sheet qualifier
+  const sheetPart = ref.substring(0, bangIdx);
+  const cellPart  = ref.substring(bangIdx + 1);
+  // Already quoted
+  if (sheetPart.startsWith("'") && sheetPart.endsWith("'")) return ref;
+  // Only pure ASCII identifier characters need no quoting
+  if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheetPart)) return ref;
+  // Escape any internal single quotes as '' then wrap
+  const escaped = sheetPart.replace(/'/g, "''");
+  return `'${escaped}'!${cellPart}`;
+}
+
+/**
  * Get the Worksheet object for the sheet in the given address.
  * Works with plain, sheet-qualified, and workbook-qualified addresses.
  */

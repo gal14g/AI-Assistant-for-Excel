@@ -44,8 +44,9 @@ async function handler(
   options.onProgress?.(`Cleaning ${values.length} rows...`);
 
   // Apply each operation sequentially
+  // Guard each row with ?? [] in case Office.js returns a sparse/null row
   const cleaned = values.map((row) =>
-    row.map((cell) => {
+    (row ?? []).map((cell) => {
       if (typeof cell !== "string") return cell;
       let val = cell;
       for (const op of operations) {
@@ -77,12 +78,17 @@ function applyOperation(value: string, operation: CleanupOperation): string {
     case "uppercase":
       return value.toUpperCase();
     case "properCase":
-      return value.replace(
-        /\w\S*/g,
-        (txt) => txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase()
-      );
+      // Use (^|\s)\S rather than \w — \w only matches ASCII [A-Za-z0-9_]
+      // and silently skips Hebrew and other non-Latin characters.
+      // This approach capitalises the first character of every whitespace-delimited
+      // word regardless of script. For Hebrew, toUpperCase() is a safe no-op.
+      return value.replace(/(^|\s)(\S)/g, (_, space, char) => space + char.toUpperCase());
     case "removeNonPrintable":
-      return value.replace(/[^\x20-\x7E]/g, "");
+      // Remove only actual ASCII control characters (U+0000–U+001F except
+      // tab U+0009, newline U+000A, carriage return U+000D, and DEL U+007F).
+      // The old regex [^\x20-\x7E] also matched ALL non-ASCII including Hebrew,
+      // Arabic, emoji, etc. — this version preserves all legitimate Unicode text.
+      return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
     case "normalizeWhitespace":
       return value.replace(/\s+/g, " ").trim();
     default:

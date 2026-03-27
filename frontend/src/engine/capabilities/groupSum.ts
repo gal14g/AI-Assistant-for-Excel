@@ -10,7 +10,7 @@
 
 import { CapabilityMeta, GroupSumParams, StepResult, ExecutionOptions } from "../types";
 import { registry } from "../capabilityRegistry";
-import { resolveRange } from "./rangeUtils";
+import { resolveRange, quoteSheetInRef } from "./rangeUtils";
 
 const meta: CapabilityMeta = {
   action: "groupSum",
@@ -156,7 +156,8 @@ function getColumnFromRange(rangeAddress: string, colOffset: number): string {
   const col = ref.match(/[A-Z]+/)?.[0] ?? "A";
   const offsetCol = offsetColumnLetter(col, colOffset);
   const prefix = parts.length > 1 ? parts[0] + "!" : "";
-  return `${prefix}${offsetCol}:${offsetCol}`;
+  // quoteSheetInRef handles Hebrew/non-ASCII sheet names in SUMIF formula strings
+  return quoteSheetInRef(`${prefix}${offsetCol}:${offsetCol}`);
 }
 
 function offsetColumnLetter(col: string, offset: number): string {

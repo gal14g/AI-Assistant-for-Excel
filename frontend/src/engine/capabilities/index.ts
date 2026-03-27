@@ -26,5 +26,6 @@ import "./autoFitColumns";
 import "./mergeCells";
 import "./setNumberFormat";
 import "./insertDeleteRows";
+import "./addSparkline";
 
 export { registry } from "../capabilityRegistry";

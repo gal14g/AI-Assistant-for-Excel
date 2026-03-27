@@ -134,6 +134,7 @@ export const ChatInput: React.FC<Props> = ({
           disabled={disabled}
           placeholder="Type a command… select a range in Excel, then copy and paste here to insert reference"
           rows={3}
+          dir="auto"
           style={{
             flex: 1,
             padding: "8px 12px",
