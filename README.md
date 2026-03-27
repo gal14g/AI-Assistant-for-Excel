@@ -1,310 +1,389 @@
 # Excel AI Copilot
 
-A production-oriented Excel Office Add-in that provides a natural-language chat interface for spreadsheet operations. Type commands in plain English, click cells to reference ranges, preview execution plans, and run them with full undo support.
+A Microsoft Excel Office Add-in that lets you control your spreadsheet with natural language. Powered by any LLM via LiteLLM (OpenAI, Anthropic Claude, Ollama, Azure, etc.).
 
-## Architecture
+---
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Excel Workbook                          │
-│  ┌────────────┐  ┌──────────────────────────────────────┐   │
-│  │   Ribbon    │  │          Task Pane (React)           │   │
-│  │  Commands   │  │  ┌──────────────────────────────┐    │   │
-│  │             │  │  │       Chat Panel              │    │   │
-│  │ [Open]      │  │  │  - Message history            │    │   │
-│  │ [Undo]      │  │  │  - Range tokens               │    │   │
-│  │             │  │  │  - Streaming explanations      │    │   │
-│  └──────┬─────┘  │  │  - Plan preview                │    │   │
-│         │        │  │  - Execution timeline           │    │   │
-│    Shared Runtime │  └──────────┬───────────────────┘    │   │
-│         │        │             │                          │   │
-│  ┌──────┴────────┴─────────────┴──────────────────────┐   │   │
-│  │              Execution Engine                       │   │   │
-│  │  ┌────────────┐ ┌──────────┐ ┌──────────────────┐  │   │   │
-│  │  │ Capability │ │Validator │ │  Snapshot/Rollback│  │   │   │
-│  │  │ Registry   │ │          │ │                   │  │   │   │
-│  │  └────────────┘ └──────────┘ └──────────────────┘  │   │   │
-│  │  ┌──────────────────────────────────────────────┐  │   │   │
-│  │  │  Office.js Capability Handlers (15+)         │  │   │   │
-│  │  │  readRange | writeValues | writeFormula | ... │  │   │   │
-│  │  └──────────────────────────────────────────────┘  │   │   │
-│  └────────────────────────────────────────────────────┘   │   │
-└───────────────────────────┬─────────────────────────────────┘
-                            │ REST + SSE
-                ┌───────────┴───────────┐
-                │   FastAPI Backend      │
-                │  ┌─────────────────┐   │
-                │  │  LLM Planner    │   │
-                │  │  (Claude API)   │   │
-                │  └────────┬────────┘   │
-                │  ┌────────┴────────┐   │
-                │  │  Plan Validator │   │
-                │  │  (Pydantic)     │   │
-                │  └─────────────────┘   │
-                └────────────────────────┘
-```
+## Table of Contents
 
-### Key Design Principles
+1. [What it does](#what-it-does)
+2. [Project structure](#project-structure)
+3. [Local development](#local-development)
+4. [Making changes](#making-changes)
+5. [Deploy to OpenShift](#deploy-to-openshift)
+6. [Installing the add-in in Excel](#installing-the-add-in-in-excel)
+7. [Configuration reference](#configuration-reference)
 
-1. **LLM produces JSON plans, never executable code.** The planner outputs a strict typed JSON plan. The frontend validates and executes it via safe Office.js wrappers.
+---
 
-2. **Formatting preservation by default.** Write operations use `range.values` (not clipboard/copy), which only sets cell values without touching formatting.
+## What it does
 
-3. **Native formulas preferred.** When possible, the planner uses `writeFormula` with `XLOOKUP`, `SUMIF`, etc. so results auto-update and are auditable.
+- Chat with an AI assistant directly inside Excel
+- The AI understands your spreadsheet context (selected ranges, sheet names)
+- Executes multi-step operations: match records, create charts/pivots, sort, clean text, apply conditional formatting, and more
+- XLOOKUP with automatic fallback to VLOOKUP for older Excel versions (2016/2019)
+- Full undo support after every AI operation
 
-4. **Snapshot before every write.** The executor captures cell values before each mutating step, enabling per-plan rollback.
+---
 
-5. **Shared runtime.** Task pane, ribbon commands, and future custom functions share one JS context for coordinated state.
-
-## Project Structure
+## Project structure
 
 ```
 excel-ai-copilot/
-├── frontend/                    # Office Add-in (React + TypeScript)
-│   ├── manifest.xml             # Office Add-in manifest (shared runtime)
-│   ├── package.json
-│   ├── webpack.config.js
-│   ├── public/
-│   │   ├── taskpane.html        # Task pane entry point
-│   │   └── commands.html        # Ribbon commands entry point
-│   └── src/
-│       ├── index.tsx             # React bootstrap after Office.onReady
-│       ├── commands/commands.ts  # Ribbon button handlers
-│       ├── engine/
-│       │   ├── types.ts          # All TypeScript type definitions
-│       │   ├── capabilityRegistry.ts  # Action → handler registry
-│       │   ├── executor.ts       # Plan execution engine
-│       │   ├── validator.ts      # Client-side plan validation
-│       │   ├── snapshot.ts       # Snapshot/rollback management
-│       │   └── capabilities/     # Individual Office.js action handlers
-│       │       ├── readRange.ts, writeValues.ts, writeFormula.ts
-│       │       ├── matchRecords.ts, groupSum.ts
-│       │       ├── createTable.ts, applyFilter.ts, sortRange.ts
-│       │       ├── createPivot.ts, createChart.ts
-│       │       ├── conditionalFormat.ts, cleanupText.ts
-│       │       ├── removeDuplicates.ts, freezePanes.ts
-│       │       ├── findReplace.ts, sheetOps.ts, validation.ts
-│       │       └── index.ts      # Auto-registers all capabilities
-│       ├── services/
-│       │   ├── api.ts            # REST client for backend
-│       │   └── streaming.ts      # SSE client for streaming updates
-│       ├── shared/
-│       │   └── planSchema.ts     # Zod runtime schema validation
-│       └── taskpane/
-│           ├── App.tsx
-│           ├── App.css
-│           ├── components/
-│           │   ├── ChatPanel.tsx
-│           │   ├── ChatInput.tsx
-│           │   ├── MessageBubble.tsx
-│           │   ├── RangeToken.tsx
-│           │   ├── PlanPreview.tsx
-│           │   └── ExecutionTimeline.tsx
-│           └── hooks/
-│               ├── useChat.ts
-│               ├── useSelectionTracker.ts
-│               └── usePlanExecution.ts
-├── backend/                     # FastAPI backend
-│   ├── main.py                  # FastAPI app entry point
-│   ├── requirements.txt
-│   ├── .env.example
+├── backend/              Python FastAPI backend
 │   ├── app/
-│   │   ├── config.py            # Settings from environment
-│   │   ├── models/
-│   │   │   ├── plan.py          # Pydantic models for plan schema
-│   │   │   └── request.py       # API request/response models
-│   │   ├── services/
-│   │   │   ├── planner.py       # LLM planner (Claude API)
-│   │   │   └── validator.py     # Server-side plan validation
-│   │   ├── routers/
-│   │   │   ├── plan.py          # REST endpoints
-│   │   │   └── stream.py        # SSE streaming endpoints
-│   │   └── prompts/
-│   │       ├── planner_system.txt   # System prompt for planner
-│   │       └── validator_system.txt # System prompt for validator
-│   ├── tests/
-│   │   ├── test_plan_validation.py
-│   │   └── test_planner.py
-│   └── examples/
-│       ├── match_and_sum_plan.json
-│       ├── chart_creation_plan.json
-│       └── cleanup_plan.json
-└── shared/
-    └── plan-schema.json         # JSON Schema (shared contract)
+│   │   ├── routers/      API endpoints (/api/chat, /api/plan)
+│   │   ├── services/     LLM integration, chat service, planner
+│   │   ├── models/       Pydantic request/response models
+│   │   └── config.py     All settings (env vars)
+│   ├── main.py           FastAPI app entry point
+│   └── requirements.txt
+├── frontend/             React + TypeScript Office Add-in
+│   ├── src/
+│   │   ├── engine/       Execution engine, capabilities, snapshot/rollback
+│   │   ├── services/     API client
+│   │   └── taskpane/     UI components, hooks
+│   ├── manifest.xml      Office Add-in manifest (loaded by Excel)
+│   └── webpack.config.js
+├── Dockerfile            Multi-stage build (frontend + backend in one image)
+├── docker-compose.yml    Local Docker testing
+├── .env.example          All environment variables documented
+└── README.md             This file
 ```
 
-## Local Development Setup
+---
+
+## Local development
+
+This is the workflow for **day-to-day coding**. No Docker needed.
 
 ### Prerequisites
 
-- Node.js 18+
 - Python 3.11+
-- Excel (desktop or Microsoft 365 web)
-- An Anthropic API key
+- Node.js 20+
+- An LLM API key (Anthropic, OpenAI, etc.) — or Ollama running locally
 
-### 1. Backend Setup
+### 1. Clone and install
 
 ```bash
-cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env and set your ANTHROPIC_API_KEY
-
-# Run the server
-python -m uvicorn main:app --reload --port 8000
+git clone https://github.com/gal14g/excel-ai-copilot.git
+cd excel-ai-copilot
 ```
 
-The API will be available at `http://localhost:8000`. Check `http://localhost:8000/docs` for the interactive API documentation.
+**Backend:**
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-### 2. Frontend Setup
-
+**Frontend:**
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
+```
 
-# Start the dev server (HTTPS on port 3000)
+### 2. Configure your LLM key
+
+Create `backend/.env`:
+```env
+LLM_MODEL=claude-sonnet-4-20250514
+LLM_API_KEY=your-api-key-here
+```
+
+See [Configuration reference](#configuration-reference) for all options (OpenAI, Ollama, Azure, etc.).
+
+### 3. Start both servers
+
+**Terminal 1 — Backend:**
+```bash
+cd backend
+source venv/bin/activate
+uvicorn main:app --reload --port 8000
+```
+
+**Terminal 2 — Frontend:**
+```bash
+cd frontend
 npm run dev
 ```
 
-### 3. Sideload the Add-in
+The frontend dev server starts at `https://localhost:3000`.
+The backend API runs at `http://localhost:8000`.
+Webpack proxies `/api` calls from the frontend to the backend automatically.
 
-#### Excel Desktop (Windows/Mac)
+### 4. Load the add-in in Excel
 
-```bash
-cd frontend
-npx office-addin-debugging start manifest.xml
+In Excel: **Insert → Add-ins → Upload My Add-in** → enter:
+```
+https://localhost:3000/manifest.xml
 ```
 
-Or manually:
+Accept the self-signed certificate warning. The **AI Copilot** tab appears in the Excel ribbon.
+
+> **Note:** Excel requires HTTPS for add-ins. The webpack dev server provides a self-signed HTTPS certificate automatically.
+
+---
+
+## Making changes
+
+### Backend changes
+The backend reloads automatically (`--reload` flag). Just save the file — no restart needed.
+
+### Frontend changes
+Webpack hot-reloads automatically. Save the file and the add-in updates within a few seconds.
+
+### Do I need to rebuild Docker every time I make a change?
+
+**No.** Docker is only for deploying to OpenShift.
+
+Your local development loop never involves Docker:
+```
+Edit code → save → see changes live in Excel immediately
+```
+
+You only rebuild the Docker image when you are ready to push a new version to OpenShift. And thanks to layer caching, rebuilds are fast after the first time — Docker only rebuilds the layers that actually changed.
+
+---
+
+## Deploy to OpenShift
+
+### How it works
+
+The Docker image bundles the React frontend and FastAPI backend into a single container. OpenShift provides HTTPS automatically via a Route — no certificate configuration is needed inside the container.
+
+```
+User's Excel
+    │  HTTPS
+    ▼
+OpenShift Route  (TLS terminated here — free HTTPS)
+    │  HTTP
+    ▼
+Container :8080
+    ├── GET /api/*    →  FastAPI (AI chat, plan generation)
+    ├── GET /health   →  health check
+    └── GET /*        →  React build (taskpane.html, manifest.xml, assets)
+```
+
+Multiple users can use the add-in simultaneously. FastAPI is fully async — while one user's LLM request is in-flight, other requests are handled concurrently. No message queue needed.
+
+---
+
+### Prerequisites
+
+- Docker installed and running on your machine
+- `oc` CLI installed ([download here](https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/))
+- Logged in to your OpenShift cluster: `oc login https://your-cluster.example.com`
+- Access to a container image registry (OpenShift built-in, Quay.io, Docker Hub, etc.)
+
+---
+
+### Step 1 — Get your public URL
+
+You need the public HTTPS URL your add-in will live at **before building**, because it gets baked into `manifest.xml`.
+
+The URL pattern is: `https://<app-name>.apps.<cluster-domain>`
+
+**If you don't know it yet:** create a placeholder Route first, get the URL, then build. Or ask your cluster admin.
+
+Example URL: `https://excel-copilot.apps.my-cluster.example.com`
+
+---
+
+### Step 2 — Build the Docker image
+
+Run this from the repo root, substituting your real URL:
+
+```bash
+docker build \
+  --build-arg FRONTEND_URL=https://excel-copilot.apps.my-cluster.example.com \
+  -t excel-ai-copilot:latest \
+  .
+```
+
+**First build:** 5–10 minutes (downloads Node and Python base images, installs all dependencies).
+**Subsequent builds:** 1–3 minutes (Docker caches layers — only changed code rebuilds).
+
+---
+
+### Step 3 — Push the image to a registry
+
+Pick whichever registry you have access to:
+
+**Option A — OpenShift's built-in registry:**
+```bash
+# Log in to the registry
+oc registry login
+
+# Find your registry address
+oc get route default-route -n openshift-image-registry
+
+# Tag and push  (replace <registry-address> and <your-namespace>)
+docker tag excel-ai-copilot:latest \
+  <registry-address>/<your-namespace>/excel-ai-copilot:latest
+
+docker push <registry-address>/<your-namespace>/excel-ai-copilot:latest
+```
+
+**Option B — Quay.io:**
+```bash
+docker login quay.io
+docker tag excel-ai-copilot:latest quay.io/<your-username>/excel-ai-copilot:latest
+docker push quay.io/<your-username>/excel-ai-copilot:latest
+```
+
+**Option C — Docker Hub:**
+```bash
+docker login
+docker tag excel-ai-copilot:latest <your-dockerhub-username>/excel-ai-copilot:latest
+docker push <your-dockerhub-username>/excel-ai-copilot:latest
+```
+
+---
+
+### Step 4 — Create a Secret for your API key
+
+Never put secrets in the image or in YAML files. Store them in an OpenShift Secret:
+
+```bash
+oc create secret generic excel-copilot-secrets \
+  --from-literal=LLM_API_KEY=your-api-key-here \
+  --from-literal=LLM_MODEL=claude-sonnet-4-20250514
+```
+
+---
+
+### Step 5 — Deploy the container
+
+**Option A — Web console (recommended for first deploy):**
+1. Open the OpenShift web console → your project
+2. Click **+Add → Container Image**
+3. Enter your image reference (from step 3)
+4. Set the container port to **8080**
+5. Under **Environment Variables**, add:
+   - `OPENSHIFT` = `true`
+   - Add `LLM_API_KEY` from your Secret (select "From Secret", choose `excel-copilot-secrets`)
+   - Add `LLM_MODEL` from your Secret
+6. Click **Create** — OpenShift creates a Deployment, Service, and Route automatically
+7. Click on the Route → **Edit** → set **TLS Termination** to **Edge**
+
+**Option B — `oc` CLI:**
+```bash
+# Deploy from image
+oc new-app --image=quay.io/<your-username>/excel-ai-copilot:latest \
+  --name=excel-copilot
+
+# Set the OPENSHIFT flag and inject the secret
+oc set env deployment/excel-copilot OPENSHIFT=true
+oc set env deployment/excel-copilot --from=secret/excel-copilot-secrets
+
+# Expose with HTTPS edge TLS
+oc create route edge excel-copilot \
+  --service=excel-copilot \
+  --port=8080
+
+# Get the assigned URL
+oc get route excel-copilot
+```
+
+---
+
+### Step 6 — Verify the deployment
+
+```bash
+# Should return: {"status":"ok","version":"1.0.0","mode":"openshift"}
+curl https://excel-copilot.apps.my-cluster.example.com/health
+
+# Should return the manifest XML
+curl https://excel-copilot.apps.my-cluster.example.com/manifest.xml
+```
+
+---
+
+### Deploying updates (after code changes)
+
+```bash
+# 1. Rebuild  (fast — only changed layers rebuild)
+docker build \
+  --build-arg FRONTEND_URL=https://excel-copilot.apps.my-cluster.example.com \
+  -t excel-ai-copilot:latest \
+  .
+
+# 2. Push the new image
+docker push quay.io/<your-username>/excel-ai-copilot:latest
+
+# 3. Restart the pods — OpenShift pulls the new image with zero downtime
+oc rollout restart deployment/excel-copilot
+```
+
+---
+
+## Installing the add-in in Excel
+
+### For yourself (sideloading)
+
 1. Open Excel
-2. Go to **Insert → My Add-ins → Upload My Add-in**
-3. Browse to `frontend/manifest.xml`
-4. The "AI Copilot" tab will appear in the ribbon
+2. Go to **Insert → Add-ins → Upload My Add-in**
+3. Enter the manifest URL:
+   - **Local dev:** `https://localhost:3000/manifest.xml`
+   - **OpenShift:** `https://excel-copilot.apps.my-cluster.example.com/manifest.xml`
+4. Click **Upload**
+5. The **AI Copilot** tab appears in the Excel ribbon
 
-#### Excel on the Web
+### For your whole organisation (Microsoft 365 Admin Center)
 
-1. Go to [office.com](https://www.office.com) and open Excel
-2. Go to **Insert → Office Add-ins → Upload My Add-in**
-3. Upload `frontend/manifest.xml`
+No action needed from individual users — the add-in appears in Excel automatically.
 
-### 4. Running Tests
+1. Log in to [admin.microsoft.com](https://admin.microsoft.com) as a Microsoft 365 admin
+2. Go to **Settings → Integrated apps → Upload custom apps**
+3. Select **Provide link to manifest** and enter your OpenShift manifest URL
+4. Assign to specific users, groups, or the entire organisation
+5. Done — the add-in rolls out to all assigned users within 24 hours
 
-```bash
-# Backend tests
-cd backend
-pytest tests/ -v
+---
 
-# Frontend tests (when configured)
-cd frontend
-npm test
+## Configuration reference
+
+All settings are environment variables. Copy `.env.example` to `backend/.env` for local development.
+
+| Variable | Local default | Production default | Description |
+|---|---|---|---|
+| `LLM_MODEL` | `claude-sonnet-4-20250514` | same | LiteLLM model string |
+| `LLM_API_KEY` | _(empty)_ | _(from Secret)_ | API key for your LLM provider |
+| `LLM_BASE_URL` | _(empty)_ | _(empty)_ | Custom API base URL (Ollama, Azure, proxy) |
+| `LLM_API_VERSION` | _(empty)_ | _(empty)_ | Azure OpenAI API version only |
+| `LLM_MAX_TOKENS` | `4096` | `4096` | Max tokens per LLM response |
+| `LLM_TEMPERATURE` | `0.1` | `0.1` | Lower = more deterministic plans |
+| `PORT` | `8000` | `8080` | Port the backend listens on |
+| `DEBUG` | `true` | `false` | Enables uvicorn auto-reload |
+| `OPENSHIFT` | `false` | `true` | Master production switch |
+| `SERVE_STATIC` | `false` | `true` | Serve built frontend from FastAPI |
+| `STATIC_DIR` | `./static` | `./static` | Path to built frontend files |
+| `FRONTEND_URL` | `https://localhost:3000` | your OpenShift URL | **Build-time only** — baked into `manifest.xml` |
+
+### LLM provider examples
+
+```env
+# Anthropic Claude (recommended)
+LLM_MODEL=claude-sonnet-4-20250514
+LLM_API_KEY=sk-ant-...
+
+# OpenAI
+LLM_MODEL=gpt-4o
+LLM_API_KEY=sk-...
+
+# Ollama (local, no key needed)
+LLM_MODEL=ollama/llama3
+LLM_BASE_URL=http://localhost:11434
+
+# Azure OpenAI
+LLM_MODEL=azure/my-deployment-name
+LLM_API_KEY=...
+LLM_BASE_URL=https://my-resource.openai.azure.com/
+LLM_API_VERSION=2024-02-01
+
+# Google Gemini
+LLM_MODEL=gemini/gemini-1.5-pro
+LLM_API_KEY=...
 ```
-
-## Usage
-
-1. Click **"Open Copilot"** in the ribbon to open the task pane
-2. Type a natural-language command in the chat input
-3. Click cells/ranges in Excel to insert `[[Sheet1!A1:C20]]` tokens
-4. The system sends your request to the backend LLM planner
-5. A JSON execution plan is returned and displayed for review
-6. Click **"Preview"** to dry-run the plan (no changes)
-7. Click **"Run Plan"** to execute live
-8. Click **"Undo Last"** to rollback if needed
-
-### Example Commands
-
-- "Sum column B grouped by the categories in column A"
-- "Match everything in [[Sheet2!B:B]] with records in [[Sheet1!A:A]] and pull the prices"
-- "Create a bar chart of sales by region from A1:C20"
-- "Clean up names in column A: trim whitespace and proper case"
-- "Sort the table by date descending"
-- "Add dropdown validation to D2:D100 with options: Low, Medium, High"
-- "Freeze the top row and first column"
-- "Replace all 'N/A' with empty string in the active sheet"
-- "Create a pivot table from A1:E500 with Product as rows and sum of Revenue"
-
-## Supported Operations (15+ capabilities)
-
-| Category | Actions |
-|----------|---------|
-| Read/Write | `readRange`, `writeValues`, `writeFormula` |
-| Lookups | `matchRecords` (XLOOKUP/VLOOKUP) |
-| Aggregation | `groupSum` (SUMIF/SUMIFS) |
-| Tables | `createTable`, `applyFilter`, `sortRange` |
-| Pivots | `createPivot` |
-| Charts | `createChart` |
-| Formatting | `addConditionalFormat` |
-| Cleanup | `cleanupText`, `removeDuplicates`, `findReplace` |
-| View | `freezePanes` |
-| Validation | `addValidation` |
-| Sheets | `addSheet`, `renameSheet`, `deleteSheet`, `copySheet`, `protectSheet` |
-
-## Extension Points
-
-### Adding Custom Functions (v2)
-
-The shared runtime is already configured for custom functions. To add them:
-
-1. Create `frontend/src/functions/functions.ts`
-2. Define functions using `CustomFunctions.associate()`
-3. Add a `functions.json` metadata file
-4. Update the manifest's `<CustomFunctions>` extension point
-
-Because of the shared runtime, custom functions can access the same state as the task pane (e.g., cached data, user preferences).
-
-### Adding New Capabilities
-
-1. Create a new file in `frontend/src/engine/capabilities/`
-2. Define the `CapabilityMeta` and handler function
-3. Call `registry.register(meta, handler)` at module scope
-4. Import the new file in `capabilities/index.ts`
-5. Add the action to `StepAction` in `types.ts`
-6. Add the Pydantic param model in `backend/app/models/plan.py`
-7. Update the planner system prompt
-
-## Office.js Limitations & Notes
-
-- **Range size limits**: Very large ranges (>100k cells) may cause performance issues. Consider chunking.
-- **XLOOKUP availability**: Requires Excel 365 or Excel 2021+. The planner should fall back to VLOOKUP for older versions.
-- **Dynamic arrays**: Spill behavior (XLOOKUP, FILTER, SORT) requires Excel 365. Older versions need explicit ranges.
-- **PivotTable API**: Requires ExcelApi 1.8+. Not available in all Excel versions.
-- **Conditional format API**: Requires ExcelApi 1.6+.
-- **Freeze panes**: Requires ExcelApi 1.7+.
-- **Remove duplicates**: Requires ExcelApi 1.9+.
-- **context.sync()**: Must be called to flush operations. Batching multiple operations before sync improves performance.
-- **Proxy objects**: Only valid within their `Excel.run()` callback. Do not store them across calls.
-
-## Packaging for Production
-
-### Frontend
-
-```bash
-cd frontend
-npm run build
-# Output in dist/ – host on your CDN/web server
-```
-
-Update `manifest.xml` URLs to point to your production server instead of `localhost:3000`.
-
-### Backend
-
-```bash
-cd backend
-# Use gunicorn or uvicorn for production
-uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
-```
-
-### Publishing the Add-in
-
-1. Update the manifest with production URLs
-2. Submit to [Microsoft AppSource](https://appsource.microsoft.com/) for public distribution
-3. Or deploy via your organization's admin center for internal distribution
