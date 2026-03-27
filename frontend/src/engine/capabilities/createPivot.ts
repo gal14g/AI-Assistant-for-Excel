@@ -6,6 +6,12 @@
  * - Fields are added by name (must match header names in source data).
  * - We read the source headers first so we can validate and auto-detect fields.
  * - The pivot name must be non-empty and unique within the workbook.
+ *
+ * LLM resilience:
+ * - Small models (llama3, etc.) often output range addresses as field names,
+ *   e.g. rows: ["Sheet2!A:A"] instead of rows: ["מספר עובד"].
+ * - resolveFieldRef() converts those addresses to the matching header name
+ *   by extracting the column letter and mapping it to the header at that index.
  */
 
 import { CapabilityMeta, CreatePivotParams, StepResult, ExecutionOptions } from "../types";
@@ -25,7 +31,8 @@ async function handler(
   params: CreatePivotParams,
   options: ExecutionOptions
 ): Promise<StepResult> {
-  let { sourceRange, destinationRange, pivotName, rows, columns, values, filters } = params;
+  const { sourceRange, destinationRange } = params;
+  let { pivotName, rows, columns, values, filters } = params;
 
   if (options.dryRun) {
     return {
@@ -47,37 +54,64 @@ async function handler(
     return { stepId: "", status: "error", message: "Source range has no headers." };
   }
 
-  // ── 2. Defaults ─────────────────────────────────────────────────────────
+  // ── 2. Resolve field references ─────────────────────────────────────────
+  // Small LLMs frequently output range addresses ("Sheet2!A:A") instead of
+  // field names ("מספר עובד"). Convert those addresses to actual header names.
+  const resolveRef = (ref: string): string => {
+    if (headers.includes(ref)) return ref; // already a valid header name
+    const colIdx = columnLetterToIndex(extractColumnLetter(ref));
+    if (colIdx !== null && colIdx < headers.length) return headers[colIdx];
+    return ref; // keep as-is; will fail gracefully later
+  };
+
+  if (rows && rows.length > 0) {
+    rows = rows.map(resolveRef);
+  }
+  if (values && values.length > 0) {
+    values = values.map((v) => ({ ...v, field: resolveRef(v.field) }));
+  }
+  if (columns && columns.length > 0) {
+    columns = columns.map(resolveRef);
+  }
+  if (filters && filters.length > 0) {
+    filters = filters.map(resolveRef);
+  }
+
+  // ── 3. Defaults for any still-invalid fields ─────────────────────────────
   if (!pivotName) pivotName = `PivotTable_${Date.now()}`;
 
-  // If the LLM guessed field names that don't exist, fall back to actual headers.
   const validField = (name: string) => headers.includes(name);
 
   if (!rows || rows.length === 0 || !rows.every(validField)) {
-    rows = [headers[0]]; // first column as row grouping
+    rows = [headers[0]];
   }
   if (!values || values.length === 0 || !values.every((v) => validField(v.field))) {
-    // Use the first header not already used as a row
-    const valueHeader = headers.find((h) => !rows.includes(h)) ?? headers[0];
+    const valueHeader = headers.find((h) => !(rows as string[]).includes(h)) ?? headers[0];
     values = [{ field: valueHeader, summarizeBy: "sum" }];
   }
   if (columns && !columns.every(validField)) columns = undefined;
   if (filters && !filters.every(validField)) filters = undefined;
 
-  // ── 3. Destination ───────────────────────────────────────────────────────
-  // If destinationRange is missing, add a new sheet for the pivot.
+  // ── 4. Destination ───────────────────────────────────────────────────────
+  // If destinationRange is missing, place the pivot on a new sheet.
   let destRng: Excel.Range;
   if (!destinationRange) {
-    const pivotSheetName = pivotName.slice(0, 31); // Excel sheet name limit
-    const newSheet = context.workbook.worksheets.add(pivotSheetName);
-    destRng = newSheet.getRange("A1");
+    const pivotSheetName = pivotName.slice(0, 31); // Excel sheet name max length
+    // Reuse existing sheet if it already exists (idempotent)
+    const existing = context.workbook.worksheets.getItemOrNullObject(pivotSheetName);
+    existing.load("isNullObject");
+    await context.sync();
+    const pivotSheet = existing.isNullObject
+      ? context.workbook.worksheets.add(pivotSheetName)
+      : existing;
+    destRng = pivotSheet.getRange("A1");
   } else {
     destRng = resolveRange(context, destinationRange);
   }
 
   options.onProgress?.(`Creating PivotTable "${pivotName}"...`);
 
-  // ── 4. Create the PivotTable ─────────────────────────────────────────────
+  // ── 5. Create the PivotTable ─────────────────────────────────────────────
   const pivotTable = context.workbook.pivotTables.add(pivotName, sourceRng, destRng);
   await context.sync();
 
@@ -121,6 +155,39 @@ async function handler(
     status: "success",
     message: `Created PivotTable "${pivotName}" — rows: ${rows.join(", ")} | values: ${values.map((v) => v.field).join(", ")}`,
   };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Extract the first column letter sequence from a range address.
+ * "Sheet2!D:D"   → "D"
+ * "[WB.xlsx]Sheet2!AB1:AB7" → "AB"
+ * "D:D"          → "D"
+ * "D1"           → "D"
+ */
+function extractColumnLetter(address: string): string | null {
+  // Strip workbook qualifier [...]
+  const clean = address.replace(/^\[.*?\]/, "");
+  // Strip sheet name (everything up to and including "!")
+  const afterBang = clean.includes("!") ? clean.split("!").pop()! : clean;
+  // Strip single quotes around sheet name if any leaked
+  const ref = afterBang.replace(/^'/, "");
+  const match = ref.match(/^([A-Za-z]+)/);
+  return match ? match[1].toUpperCase() : null;
+}
+
+/**
+ * Convert a column letter to a 0-based index.
+ * "A" → 0, "B" → 1, "Z" → 25, "AA" → 26, "D" → 3
+ */
+function columnLetterToIndex(letter: string | null): number | null {
+  if (!letter) return null;
+  let index = 0;
+  for (let i = 0; i < letter.length; i++) {
+    index = index * 26 + (letter.charCodeAt(i) - 64);
+  }
+  return index - 1; // convert to 0-based
 }
 
 function mapSummarizeBy(summarizeBy: string): Excel.AggregationFunction {

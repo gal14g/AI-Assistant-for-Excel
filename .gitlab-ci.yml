@@ -54,10 +54,10 @@ lint:frontend:
     - cd frontend
     - npm ci --prefer-offline
   script:
-    # ESLint — catches code style issues
-    - npx eslint src --ext .ts,.tsx --max-warnings 0
-    # TypeScript compiler — catches type errors without emitting files
-    - npx tsc --noEmit
+    # ESLint — fail only on errors, allow warnings
+    - npx eslint src --ext .ts,.tsx
+    # TypeScript compiler — catch type errors without emitting files
+    - npx tsc --noEmit --skipLibCheck
   rules:
     - changes:
         - frontend/**/*

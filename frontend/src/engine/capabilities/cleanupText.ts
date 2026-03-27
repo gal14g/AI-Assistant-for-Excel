@@ -88,6 +88,7 @@ function applyOperation(value: string, operation: CleanupOperation): string {
       // tab U+0009, newline U+000A, carriage return U+000D, and DEL U+007F).
       // The old regex [^\x20-\x7E] also matched ALL non-ASCII including Hebrew,
       // Arabic, emoji, etc. — this version preserves all legitimate Unicode text.
+      // eslint-disable-next-line no-control-regex
       return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
     case "normalizeWhitespace":
       return value.replace(/\s+/g, " ").trim();
