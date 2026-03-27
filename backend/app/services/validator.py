@@ -108,7 +108,7 @@ def _validate_step(
             for err in e.errors():
                 errors.append(
                     ValidationIssue(
-                        message=f"Param error: {err['msg']} at {'.'.join(str(l) for l in err['loc'])}",
+                        message=f"Param error: {err['msg']} at {'.'.join(str(loc) for loc in err['loc'])}",
                         code="INVALID_PARAMS",
                         stepId=step.id,
                         field=str(err["loc"][-1]) if err["loc"] else None,

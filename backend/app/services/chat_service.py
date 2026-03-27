@@ -11,13 +11,11 @@ The response is always a JSON object with a "responseType" field.
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 
 import litellm
 
-from ..config import settings
 from ..models.chat import ChatRequest, ChatResponse
 from ..models.plan import ExecutionPlan
 from ..services.planner import _litellm_kwargs, CAPABILITY_DESCRIPTIONS, extract_json

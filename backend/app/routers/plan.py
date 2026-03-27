@@ -5,7 +5,6 @@ Plan API router – handles plan generation, validation, and capability listing.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import ValidationError
 
 from ..models.plan import ExecutionPlan
 from ..models.request import PlanRequest, PlanResponse, ValidationResponse, CapabilityInfo

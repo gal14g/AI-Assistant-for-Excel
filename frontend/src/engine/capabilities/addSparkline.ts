@@ -3,13 +3,14 @@
  *
  * Office.js notes:
  * - Sparklines require ExcelApi 1.9+.
- * - range.group(type, dataRange) creates a SparklineGroup on every cell in
- *   the location range, each reading from the corresponding row of dataRange.
- * - SparklineType: line | column | winLoss
+ * - The correct API is worksheet.sparklineGroups.add(type, sourceData, locationRange)
+ *   NOT range.group() — that method is for row/column outline grouping.
+ * - SparklineType enum is not exported in all @types/office-js versions,
+ *   so we pass the string values ("Line", "Column", "WinLoss") via cast.
  *
  * Typical use-case:
  *   dataRange:     "Sheet1!B2:M10"   (12 months × 9 products)
- *   locationRange: "Sheet1!N2:N10"   (one sparkline per product in col N)
+ *   locationRange: "Sheet1!N2:N10"   (one sparkline per product row in col N)
  */
 
 import { CapabilityMeta, AddSparklineParams, StepResult, ExecutionOptions } from "../types";
@@ -29,41 +30,35 @@ async function handler(
   params: AddSparklineParams,
   options: ExecutionOptions
 ): Promise<StepResult> {
-  const { dataRange, locationRange, sparklineType = "line", color } = params;
+  const { dataRange, locationRange, sparklineType = "line" } = params;
 
   if (options.dryRun) {
     return {
       stepId: "",
       status: "success",
-      message: `Would add ${sparklineType} sparklines to ${locationRange} from data in ${dataRange}`,
+      message: `Would add ${sparklineType} sparklines to ${locationRange} from ${dataRange}`,
     };
   }
 
   options.onProgress?.(`Adding ${sparklineType} sparklines...`);
 
   const locationRng = resolveRange(context, locationRange);
-  const dataRng = resolveRange(context, dataRange);
+  const dataRng    = resolveRange(context, dataRange);
 
-  const typeMap: Record<string, Excel.SparklineType> = {
-    line:    Excel.SparklineType.line,
-    column:  Excel.SparklineType.column,
-    winLoss: Excel.SparklineType.winLoss,
+  // Excel API string values for SparklineType (ExcelApi 1.9+).
+  // We use strings instead of the Excel.SparklineType enum because the enum
+  // is not exported in all versions of @types/office-js.
+  const typeMap: Record<string, string> = {
+    line:    "Line",
+    column:  "Column",
+    winLoss: "WinLoss",
   };
+  const excelType = typeMap[sparklineType] ?? "Line";
 
-  const excelType = typeMap[sparklineType] ?? Excel.SparklineType.line;
-  const group = locationRng.group(excelType, dataRng);
-
-  // Optional: set sparkline color
-  if (color) {
-    group.load("items");
-    await context.sync();
-    // Color applies via presetStyle or seriesColor on the group
-    try {
-      group.presetStyle = Excel.SparklineStyle.custom;
-    } catch {
-      // presetStyle may not be available on all API versions — safe to skip
-    }
-  }
+  // sparklineGroups.add(type, sourceData, locationRange) — ExcelApi 1.9
+  // Cast worksheet to any because SparklineGroupCollection typing may be absent.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (locationRng.worksheet as any).sparklineGroups.add(excelType, dataRng, locationRng);
 
   await context.sync();
 
