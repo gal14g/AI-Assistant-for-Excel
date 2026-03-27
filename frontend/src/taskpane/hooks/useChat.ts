@@ -5,7 +5,7 @@
  * to decide whether to reply with text or generate an execution plan.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { ChatMessage, ExecutionPlan } from "../../engine/types";
 import { sendChatMessage, ChatRequest } from "../../services/api";
 import { v4 as uuid } from "uuid";
@@ -39,6 +39,7 @@ export function useChat(): ChatState & ChatActions {
   const [currentPlan, setCurrentPlan] = useState<ExecutionPlan | null>(null);
   const [streamingText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
     async (text: string, rangeTokens?: { address: string; sheetName: string }[]) => {
@@ -49,6 +50,10 @@ export function useChat(): ChatState & ChatActions {
         rangeTokens,
         timestamp: new Date().toISOString(),
       };
+
+      // Cancel any in-flight request before starting a new one
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
 
       setMessages((prev) => [...prev, userMsg]);
       setIsLoading(true);
@@ -85,7 +90,7 @@ export function useChat(): ChatState & ChatActions {
           conversationHistory: history,
         };
 
-        const response = await sendChatMessage(request);
+        const response = await sendChatMessage(request, abortRef.current?.signal);
 
         const assistantMsg: ChatMessage = {
           id: uuid(),
@@ -101,6 +106,8 @@ export function useChat(): ChatState & ChatActions {
           setCurrentPlan(response.plan);
         }
       } catch (err) {
+        // Ignore aborts — they're intentional (e.g. user clicked "New chat")
+        if (err instanceof Error && err.name === "AbortError") return;
         const errorMsg = err instanceof Error ? err.message : "Failed to get response";
         setError(errorMsg);
 
@@ -121,6 +128,10 @@ export function useChat(): ChatState & ChatActions {
   );
 
   const clearHistory = useCallback(() => {
+    // Cancel any in-flight request immediately
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsLoading(false);
     setMessages([
       {
         id: uuid(),

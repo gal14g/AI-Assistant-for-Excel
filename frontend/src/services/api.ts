@@ -92,11 +92,15 @@ export async function validatePlanRemote(plan: ExecutionPlan): Promise<Validatio
  * Send a message to the conversational chat AI.
  * Returns either a plain message or an execution plan, depending on the request.
  */
-export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
+export async function sendChatMessage(
+  request: ChatRequest,
+  signal?: AbortSignal
+): Promise<ChatResponse> {
   const response = await fetch(`${BASE_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
+    signal,
   });
 
   if (!response.ok) {
