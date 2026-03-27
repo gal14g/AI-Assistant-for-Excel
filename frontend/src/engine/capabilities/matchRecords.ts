@@ -78,18 +78,27 @@ async function formulaMatch(
   // Full-column refs like "A:A" have rowCount = 1,048,576 which we cannot
   // iterate. getUsedRange(true) on the column itself returns only the
   // sub-range that has data, giving the exact last filled row.
-  const lookupRng = resolveRange(context, params.lookupRange);
-  const lookupUsed = lookupRng.getUsedRange(true);
-  lookupUsed.load("rowCount");
-  await context.sync();
-
-  const rowCount = lookupUsed.rowCount;
+  // getUsedRange(true) throws "The requested resource doesn't exist" when
+  // the range is empty — catch that and treat it as 0 rows.
+  let rowCount = 0;
+  try {
+    const lookupRng = resolveRange(context, params.lookupRange);
+    const lookupUsed = lookupRng.getUsedRange(true);
+    lookupUsed.load("rowCount");
+    await context.sync();
+    rowCount = lookupUsed.rowCount;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("doesn't exist") || msg.includes("ItemNotFound") || msg.includes("not found")) {
+      return { stepId: "", status: "success", message: `No data found in lookup range: ${params.lookupRange}` };
+    }
+    throw new Error(`Failed to read lookup range "${params.lookupRange}": ${msg}`);
+  }
 
   if (rowCount === 0) {
     return { stepId: "", status: "success", message: "No rows to process." };
   }
 
-  const outputRng = resolveRange(context, params.outputRange);
   const matchMode = params.matchType === "exact" ? "0" : "1";
   const formulas: string[][] = [];
 
@@ -105,6 +114,11 @@ async function formulaMatch(
     }
     formulas.push(rowFormulas);
   }
+
+  // Build a precise output range (e.g. Sheet2!C1:D10) rather than writing to
+  // the full column — assigning a small array to a 1M-row range can fail in
+  // Office.js when the array dimensions don't match the range dimensions.
+  const outputRng = resolveRange(context, buildOutputRange(outputAddr, rowCount, params.returnColumns.length));
 
   outputRng.formulas = formulas;
   await context.sync();
@@ -158,8 +172,9 @@ async function computedMatch(
     results.push(resultRow);
   }
 
-  // Write results (values only, preserving formatting)
-  const outputRng = resolveRange(context, params.outputRange);
+  // Write results to a precise range (not full column) to avoid dimension mismatch
+  const outputAddr = stripWorkbookQualifier(params.outputRange);
+  const outputRng = resolveRange(context, buildOutputRange(outputAddr, results.length, params.returnColumns.length));
   outputRng.values = results;
   await context.sync();
 
@@ -206,6 +221,22 @@ function offsetColumn(col: string, offset: number): string {
     num = Math.floor((num - 1) / 26);
   }
   return result || "A";
+}
+
+/**
+ * Build a precise output range address like "Sheet2!C1:D10".
+ * Avoids writing a small array to a full-column range (1M rows) which
+ * causes Office.js to throw a dimension mismatch error.
+ */
+function buildOutputRange(outputAddr: string, rowCount: number, colCount: number): string {
+  const parts = outputAddr.split("!");
+  const ref = parts.length > 1 ? parts[1] : parts[0];
+  const prefix = parts.length > 1 ? parts[0] + "!" : "";
+  const startCol = ref.match(/[A-Z]+/)?.[0] ?? "A";
+  const startRow = parseInt(ref.match(/\d+/)?.[0] ?? "1", 10);
+  const endCol = offsetColumn(startCol, colCount - 1);
+  const endRow = startRow + rowCount - 1;
+  return `${prefix}${startCol}${startRow}:${endCol}${endRow}`;
 }
 
 registry.register(meta, handler as any);
