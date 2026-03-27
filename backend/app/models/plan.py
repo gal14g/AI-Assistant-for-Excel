@@ -63,7 +63,7 @@ class WriteFormulaParams(BaseModel):
 class MatchRecordsParams(BaseModel):
     lookupRange: str
     sourceRange: str
-    returnColumns: list[int]
+    returnColumns: Optional[list[int]] = None  # defaults to [1] (first source column)
     matchType: str = "exact"
     outputRange: str
     preferFormula: Optional[bool] = True
@@ -80,7 +80,7 @@ class GroupSumParams(BaseModel):
 
 class CreateTableParams(BaseModel):
     range: str
-    tableName: str
+    tableName: Optional[str] = None  # auto-generated if omitted
     hasHeaders: Optional[bool] = True
     style: Optional[str] = None
 
@@ -105,7 +105,7 @@ class SortField(BaseModel):
 
 class SortRangeParams(BaseModel):
     range: str
-    sortFields: list[SortField]
+    sortFields: Optional[list[SortField]] = None  # defaults to first column ascending
     hasHeaders: Optional[bool] = True
 
 
@@ -117,11 +117,11 @@ class PivotValue(BaseModel):
 
 class CreatePivotParams(BaseModel):
     sourceRange: str
-    destinationRange: str
-    pivotName: str
-    rows: list[str]
+    destinationRange: Optional[str] = None   # new sheet created if omitted
+    pivotName: Optional[str] = None          # auto-generated if omitted
+    rows: Optional[list[str]] = None         # auto-detected from headers if omitted
     columns: Optional[list[str]] = None
-    values: list[PivotValue]
+    values: Optional[list[PivotValue]] = None  # auto-detected from headers if omitted
     filters: Optional[list[str]] = None
 
 

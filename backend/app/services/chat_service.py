@@ -81,21 +81,30 @@ PLAN RULES:
 4. If no [[...]] tokens are given, use the sheet/column names the user describes (e.g. "Sheet1!A:A")
 5. Set preserveFormatting: true unless the user explicitly asks to change formatting
 6. Each step must have a unique id like step_1, step_2, etc.
-7. Keep plans minimal — use only the steps actually needed
+
+MULTI-STEP PLANS:
+- Use as many steps as the task genuinely requires — do not artificially limit to one step
+- Use "dependsOn": ["step_id"] when a step must run after another (e.g. step_2 depends on step_1)
+- Steps without dependsOn run first; steps with dependsOn run after their dependencies complete
+- Examples of when to use multiple steps:
+    - Read data → clean it → write results → create chart (4 steps)
+    - Add new sheet → write headers → create table → create pivot (4 steps)
+    - Match records → sort result → add conditional formatting (3 steps)
+    - Clean up column → remove duplicates → auto-fit columns (3 steps)
 
 RANGE RULES (very important):
 - Every "range" param must be a SINGLE range address — never comma-separated multi-ranges
   WRONG: "Sheet1!A:A,Sheet2!A:A"  RIGHT: "Sheet1!A:A"
-- Full column references like "A:A" or "Sheet1!A:A" are allowed and preferred when the user says "column A"
-- readRange reads ONE range per step — use multiple readRange steps if you need data from multiple ranges
-- matchRecords, groupSum, writeValues, writeFormula ALL handle their own data reading internally — do NOT add a readRange step before them
-- For matchRecords specifically: lookupRange and sourceRange are the two columns to join on; the action reads both internally
+- Full column references like "A:A" or "Sheet1!A:A" are valid and preferred when the user says "column A"
+- readRange reads ONE range per step — use multiple readRange steps for multiple ranges
+- matchRecords, groupSum, writeValues, writeFormula read their own data — do NOT precede them with readRange
+- For matchRecords: lookupRange and sourceRange are the two columns to match; it reads both itself
 
-STEP MINIMALISM:
-- matchRecords: needs 1 step only — it reads lookupRange and sourceRange itself
-- groupSum: needs 1 step only — it reads dataRange itself
-- writeFormula: needs 1 step — never precede it with readRange
-- Only use readRange when you genuinely need to inspect data before deciding what to do next
+OPTIONAL PARAMS — many params have smart defaults, so you can omit them:
+- createPivot: only sourceRange is required; destinationRange, pivotName, rows, values are all optional (auto-detected from headers)
+- createTable: only range is required; tableName is optional (auto-generated)
+- sortRange: only range is required; sortFields defaults to first column ascending
+- matchRecords: returnColumns defaults to column 1 of sourceRange
 
 EXAMPLES OF responseType "message":
 - "What can you do?" → explain capabilities
@@ -104,10 +113,12 @@ EXAMPLES OF responseType "message":
 - "Should I use XLOOKUP or VLOOKUP?" → give advice
 
 EXAMPLES OF responseType "plan":
-- "Fill column B with the sum of A and C" → writeFormula, 1 step
-- "Create a chart from [[Sheet1!A1:B20]]" → createChart, 1 step
-- "Sort this table by the date column" → sortRange, 1 step
-- "Match column A in Sheet1 to column A in Sheet2 and write column B" → matchRecords, 1 step
+- "Read column A, match it to Sheet2, write results, then create a chart"
+    → step_1: readRange, step_2: matchRecords (dependsOn step_1), step_3: createChart (dependsOn step_2)
+- "Create a pivot from [[Sheet2!A1:B6]]" → createPivot, 1 step (sourceRange only needed)
+- "Sort this table then add green highlighting to values above 100"
+    → step_1: sortRange, step_2: addConditionalFormat (dependsOn step_1)
+- "Clean up column A then remove duplicates" → step_1: cleanupText, step_2: removeDuplicates (dependsOn step_1)
 
 Respond ONLY with the JSON object. No preamble, no markdown fences."""
 

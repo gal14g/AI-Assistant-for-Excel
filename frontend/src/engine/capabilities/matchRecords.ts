@@ -39,11 +39,12 @@ async function handler(
   const {
     lookupRange,
     sourceRange,
-    returnColumns,
     matchType,
     outputRange,
     preferFormula = true,
   } = params;
+  // Default to returning the first non-key column (column index 1) if not specified
+  const returnColumns = params.returnColumns?.length ? params.returnColumns : [1];
 
   if (options.dryRun) {
     return {

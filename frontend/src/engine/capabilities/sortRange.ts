@@ -24,17 +24,15 @@ async function handler(
   params: SortRangeParams,
   options: ExecutionOptions
 ): Promise<StepResult> {
-  const { range: address, sortFields, hasHeaders = true } = params;
+  const { range: address, hasHeaders = true } = params;
+  // Default: sort by first column ascending if no sortFields provided
+  const sortFields = params.sortFields?.length ? params.sortFields : [{ columnIndex: 0, ascending: true }];
 
   if (options.dryRun) {
     const desc = sortFields
       .map((f) => `col ${f.columnIndex} ${f.ascending !== false ? "asc" : "desc"}`)
       .join(", ");
-    return {
-      stepId: "",
-      status: "success",
-      message: `Would sort ${address} by ${desc}`,
-    };
+    return { stepId: "", status: "success", message: `Would sort ${address} by ${desc}` };
   }
 
   options.onProgress?.("Sorting range...");

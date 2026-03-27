@@ -25,7 +25,9 @@ async function handler(
   params: CreateTableParams,
   options: ExecutionOptions
 ): Promise<StepResult> {
-  const { range: address, tableName, hasHeaders = true, style } = params;
+  const { range: address, hasHeaders = true, style } = params;
+  // Auto-generate a unique table name if not provided
+  const tableName = params.tableName || `Table_${Date.now()}`;
 
   if (options.dryRun) {
     return {
