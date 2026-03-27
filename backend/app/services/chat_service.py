@@ -77,7 +77,10 @@ AVAILABLE EXCEL ACTIONS:
 PLAN RULES:
 1. Never output executable code — only JSON plans
 2. Prefer native Excel formulas (writeFormula) over computed values (writeValues)
-3. Use exact range references from [[...]] tokens in the user message when provided
+3. Use exact range references from [[...]] tokens in the user message when provided.
+   CRITICAL: Extract only the address INSIDE the [[...]] markers — do NOT include [[ or ]] in the JSON.
+   Example: user says "column [[Sheet1!A:A]]" → use "Sheet1!A:A" in params (NOT "[[Sheet1!A:A]]")
+   Example: user says "[[[WorkbookName.xlsx]Sheet1!A:A]]" → use "[WorkbookName.xlsx]Sheet1!A:A"
 4. If no [[...]] tokens are given, use the sheet/column names the user describes (e.g. "Sheet1!A:A")
 5. Set preserveFormatting: true unless the user explicitly asks to change formatting
 6. Each step must have a unique id like step_1, step_2, etc.
