@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import plan, stream, chat
+from app.routers import analyze
 
 app = FastAPI(
     title="Excel AI Copilot API",
@@ -47,6 +48,7 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(plan.router)
 app.include_router(stream.router)
+app.include_router(analyze.router)
 
 
 @app.get("/health")
