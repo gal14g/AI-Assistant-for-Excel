@@ -6,7 +6,7 @@
  * - GET /api/capabilities: list available capabilities
  */
 
-import { ExecutionPlan } from "../engine/types";
+import { ExecutionPlan, PlanOption } from "../engine/types";
 
 export interface ChatRequest {
   userMessage: string;
@@ -17,9 +17,11 @@ export interface ChatRequest {
 }
 
 export interface ChatResponse {
-  responseType: "message" | "plan";
+  responseType: "message" | "plan" | "plans";
   message: string;
   plan?: ExecutionPlan;
+  plans?: PlanOption[];
+  interactionId?: string;
 }
 
 // Empty base — all /api calls go through the webpack dev-server proxy
@@ -118,4 +120,24 @@ export async function fetchCapabilities(): Promise<{ action: string; description
   const response = await fetch(`${BASE_URL}/api/capabilities`);
   if (!response.ok) throw new Error("Failed to fetch capabilities");
   return response.json();
+}
+
+/**
+ * Record the user's choice (applied or dismissed) for an interaction.
+ * Fire-and-forget — errors are silently swallowed.
+ */
+export async function sendFeedback(
+  interactionId: string,
+  chosenPlanId: string | null,
+  action: "applied" | "dismissed",
+): Promise<void> {
+  try {
+    await fetch(`${BASE_URL}/api/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interactionId, chosenPlanId, action }),
+    });
+  } catch {
+    // Fire-and-forget: feedback logging should never disrupt UX
+  }
 }

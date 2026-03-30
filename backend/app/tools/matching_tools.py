@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 import pandas as pd
 
@@ -335,13 +335,13 @@ def run_exact_match(
 
     # Determine which right columns to return
     if return_columns:
-        right_cols_to_keep = [
+        _right_cols_to_keep = [
             c + "_right" if c + "_right" in merged.columns else c
             for c in return_columns
             if c in right_df.columns or c + "_right" in merged.columns
         ]
     else:
-        right_cols_to_keep = [
+        _right_cols_to_keep = [
             c for c in merged.columns
             if c.endswith("_right") or (c in right_df.columns and c not in left_df.columns and c != "_norm_key")
         ]

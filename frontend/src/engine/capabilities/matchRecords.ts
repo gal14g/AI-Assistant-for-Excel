@@ -59,6 +59,16 @@ async function handler(
     };
   }
 
+  // Multi-column composite key matching: when either range spans >1 column
+  // or a constant writeValue is requested, use deterministic JS matching —
+  // XLOOKUP/VLOOKUP only support single-column lookups.
+  const lookupCols = countColumnsInAddr(stripWorkbookQualifier(lookupRange));
+  const sourceCols = countColumnsInAddr(stripWorkbookQualifier(sourceRange));
+
+  if (lookupCols > 1 || sourceCols > 1 || params.writeValue !== undefined) {
+    return await compositeKeyMatch(context, { ...params, returnColumns }, options);
+  }
+
   if (preferFormula) {
     return await formulaMatch(context, { ...params, returnColumns }, options);
   } else {
@@ -177,15 +187,37 @@ async function computedMatch(
 ): Promise<StepResult> {
   options.onProgress?.("Reading source data...");
 
-  const lookupRng = resolveRange(context, params.lookupRange);
-  const sourceRng = resolveRange(context, params.sourceRange);
-  lookupRng.load("values");
-  sourceRng.load("values");
-  await context.sync();
+  // Use getUsedRange(false) to avoid loading 1M rows for full-column refs.
+  // Load address on the lookup range so we know its actual start row.
+  let lookupUsed: Excel.Range;
+  let sourceUsed: Excel.Range;
+  try {
+    const lookupRng = resolveRange(context, params.lookupRange);
+    const sourceRng = resolveRange(context, params.sourceRange);
+    lookupUsed = lookupRng.getUsedRange(false);
+    sourceUsed = sourceRng.getUsedRange(false);
+    lookupUsed.load("values, address");
+    sourceUsed.load("values");
+    await context.sync();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("ItemNotFound") || msg.includes("not found") || msg.includes("doesn't exist")) {
+      return { stepId: "", status: "success", message: `No data found in lookup range: ${params.lookupRange}` };
+    }
+    throw new Error(`Failed to read ranges: ${msg}`);
+  }
 
-  const lookupValues = lookupRng.values ?? [];
-  const sourceValues = sourceRng.values ?? [];
+  const lookupValues = lookupUsed.values ?? [];
+  const sourceValues = sourceUsed.values ?? [];
   const { returnColumns } = params;
+
+  // Parse actual start row from the bounding-box address
+  const startRow = (() => {
+    const raw = lookupUsed.address ?? "";
+    const cellPart = raw.includes("!") ? raw.split("!").pop()! : raw;
+    const m = cellPart.replace(/\$/g, "").match(/[A-Z]+(\d+)/);
+    return m ? parseInt(m[1], 10) : 1;
+  })();
 
   options.onProgress?.("Matching records...");
 
@@ -209,11 +241,16 @@ async function computedMatch(
     results.push(resultRow);
   }
 
+  // Write output starting from the actual start row of the lookup bounding box
   const outputAddr = stripWorkbookQualifier(params.outputRange);
-  const outputRng = resolveRange(
-    context,
-    buildOutputRange(outputAddr, results.length, returnColumns.length)
-  );
+  const outputParts = outputAddr.split("!");
+  const outSheet = outputParts.length > 1 ? outputParts[0] + "!" : "";
+  const outRef   = outputParts.length > 1 ? outputParts[1] : outputParts[0];
+  const outCol   = outRef.match(/[A-Z]+/)?.[0] ?? "A";
+  const endCol   = offsetColumn(outCol, returnColumns.length - 1);
+  const preciseOutputAddr = `${outSheet}${outCol}${startRow}:${endCol}${startRow + results.length - 1}`;
+
+  const outputRng = resolveRange(context, preciseOutputAddr);
   outputRng.values = results;
   await context.sync();
 
@@ -221,7 +258,145 @@ async function computedMatch(
   return {
     stepId: "",
     status: "success",
-    message: `Matched ${matched}/${lookupValues.length} records, wrote to ${params.outputRange}`,
+    message: `Matched ${matched}/${lookupValues.length} records, wrote to ${preciseOutputAddr}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Composite key match (multi-column deterministic — no formulas)
+// ---------------------------------------------------------------------------
+
+/**
+ * Matches rows by comparing tuples across multiple columns.
+ * Handles sparse data and merged cells via getUsedRange(false) + fill-down.
+ *
+ * For each matched row, writes params.writeValue to the EXACT sheet row in
+ * outputRange that corresponds to that lookup row.  Non-matched rows are left
+ * completely untouched — no empty strings are written over existing content.
+ */
+async function compositeKeyMatch(
+  context: Excel.RequestContext,
+  params: MatchRecordsParams & { returnColumns: number[] },
+  options: ExecutionOptions
+): Promise<StepResult> {
+  const writeValue = params.writeValue ?? "match";
+  options.onProgress?.("Reading ranges for composite match...");
+
+  const sourceRng = resolveRange(context, params.sourceRange);
+  const lookupRng = resolveRange(context, params.lookupRange);
+
+  // getUsedRange(false) returns the full bounding box including empty rows
+  // between data blocks — essential for sparse / gapped data.
+  let sourceUsed: Excel.Range;
+  let lookupUsed: Excel.Range;
+  try {
+    sourceUsed = sourceRng.getUsedRange(false);
+    lookupUsed = lookupRng.getUsedRange(false);
+    sourceUsed.load("values");
+    // Also load address so we know the ACTUAL start row of the bounding box.
+    // getUsedRange on a full-column ref like "A:B" starts at the first used row,
+    // which may be row 2 or 3 (e.g. when row 1 is a merged title in other columns).
+    // We must write output starting at that same row — not always row 1.
+    lookupUsed.load("values, address");
+    await context.sync();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("ItemNotFound") || msg.includes("not found") || msg.includes("doesn't exist")) {
+      return { stepId: "", status: "success", message: `No data found in range: ${msg}` };
+    }
+    throw new Error(`Failed to read ranges: ${msg}`);
+  }
+
+  // Parse the first row number from the bounding-box address.
+  // Address looks like: "[Book.xlsx]Sheet!$A$2:$B$9" or "'תוכנה'!$A$2:$B$9"
+  // We want the first digit group, e.g. 2 from "$A$2".
+  const lookupStartRow = (() => {
+    const raw = (lookupUsed as Excel.Range).address ?? "";
+    // After "!" take only the cell-address part; strip $ signs; find first integer
+    const cellPart = raw.includes("!") ? raw.split("!").pop()! : raw;
+    const m = cellPart.replace(/\$/g, "").match(/[A-Z]+(\d+)/);
+    return m ? parseInt(m[1], 10) : 1;
+  })();
+
+  type CellVal = string | number | boolean | null;
+  const sourceVals = sourceUsed.values as CellVal[][];
+  const lookupVals = lookupUsed.values as CellVal[][];
+
+  options.onProgress?.("Building composite key index...");
+
+  // Normalize: trim, lowercase, coerce to string. Join with null-byte separator
+  // so "A\x00B" cannot collide with "AB".
+  const normalize = (v: CellVal): string => String(v ?? "").trim().toLowerCase();
+  const toKey = (row: CellVal[]): string => row.map(normalize).join("\x00");
+  const isEmptyRow = (row: CellVal[]): boolean => row.every((v) => v === null || v === "");
+
+  // Forward-fill merged cells: Office.js returns "" for every row in a merge
+  // group after the first. Fill them down with the last non-empty row's values
+  // so composite key matching works correctly on sheets with merged cells.
+  // A row stays empty (null-row) only when there is no prior non-empty row to
+  // inherit from (i.e. it is a genuine leading gap, not a merge continuation).
+  const fillDown = (vals: CellVal[][]): { filled: CellVal[][]; wasEmpty: boolean[] } => {
+    const filled: CellVal[][] = [];
+    const wasEmpty: boolean[] = [];
+    let last: CellVal[] | null = null;
+    for (const row of vals) {
+      if (isEmptyRow(row)) {
+        wasEmpty.push(true);
+        filled.push(last !== null ? [...last] : row);
+      } else {
+        last = row;
+        wasEmpty.push(false);
+        filled.push(row);
+      }
+    }
+    return { filled, wasEmpty };
+  };
+
+  const { filled: filledSource } = fillDown(sourceVals);
+  const { filled: filledLookup, wasEmpty: lookupWasEmpty } = fillDown(lookupVals);
+
+  // Build index from forward-filled source values
+  const sourceSet = new Set<string>();
+  for (const row of filledSource) {
+    if (!isEmptyRow(row)) sourceSet.add(toKey(row));
+  }
+
+  options.onProgress?.(`Matching ${filledLookup.length} rows against ${sourceSet.size} source keys...`);
+
+  // Resolve the output worksheet and column letter.
+  // Strip any workbook qualifier and sheet-name quotes so getItem() works.
+  const outputAddrStripped = stripWorkbookQualifier(params.outputRange);
+  const outputParts = outputAddrStripped.split("!");
+  const outSheetName = outputParts.length > 1
+    ? outputParts[0].replace(/^'|'$/g, "")   // remove surrounding single-quotes from Hebrew names
+    : null;
+  const outRef = outputParts.length > 1 ? outputParts[1] : outputParts[0];
+  const outCol = outRef.match(/[A-Z]+/)?.[0] ?? "G";
+
+  const outWs = outSheetName
+    ? context.workbook.worksheets.getItem(outSheetName)
+    : context.workbook.worksheets.getActiveWorksheet();
+
+  // Write "pass" (or writeValue) to the EXACT sheet row of each matched lookup
+  // row.  We do NOT write anything to non-matched rows so existing cell content
+  // is preserved and no alignment assumptions are needed.
+  // All property assignments are queued by Office.js and flushed in one sync.
+  let matchCount = 0;
+  for (let i = 0; i < filledLookup.length; i++) {
+    const row = filledLookup[i];
+    if (isEmptyRow(row) && lookupWasEmpty[i]) continue; // genuine leading gap — skip
+    if (sourceSet.has(toKey(row))) {
+      const sheetRow = lookupStartRow + i;
+      outWs.getRange(`${outCol}${sheetRow}`).values = [[writeValue]];
+      matchCount++;
+    }
+  }
+  await context.sync();
+
+  return {
+    stepId: "",
+    status: "success",
+    message: `Composite match: ${matchCount}/${filledLookup.length} rows matched — wrote "${writeValue}" to ${outSheetName ?? "active sheet"} column ${outCol}`,
   };
 }
 
@@ -346,6 +521,26 @@ function offsetColumn(col: string, offset: number): string {
     num = Math.floor((num - 1) / 26);
   }
   return result || "A";
+}
+
+/** Convert a column letter like "A", "B", "AA" to a 1-based index. */
+function colLetterToIndex(col: string): number {
+  let n = 0;
+  for (let i = 0; i < col.length; i++) {
+    n = n * 26 + (col.charCodeAt(i) - 64);
+  }
+  return n;
+}
+
+/**
+ * Count the number of columns spanned by a range address.
+ * "A:A" → 1, "C:D" → 2, "A1:C10" → 3
+ */
+function countColumnsInAddr(addr: string): number {
+  const ref = addr.includes("!") ? addr.split("!")[1] : addr;
+  const cols = ref.match(/[A-Z]+/g) ?? ["A"];
+  if (cols.length < 2) return 1;
+  return colLetterToIndex(cols[1]) - colLetterToIndex(cols[0]) + 1;
 }
 
 /**

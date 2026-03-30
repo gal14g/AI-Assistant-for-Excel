@@ -37,6 +37,10 @@ async function handler(
 
   options.onProgress?.("Removing duplicates...");
 
+  // Note: Office.js Range.removeDuplicates() is efficient on its own — it only
+  // processes rows that have data regardless of the range address. No need to
+  // call getUsedRange() here (and doing so without syncing inside the try block
+  // would fail silently since Office.js proxy errors surface at context.sync time).
   const range = resolveRange(context, address);
   const result = range.removeDuplicates(
     columnIndexes ?? [],

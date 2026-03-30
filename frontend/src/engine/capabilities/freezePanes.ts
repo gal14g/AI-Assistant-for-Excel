@@ -35,9 +35,23 @@ async function handler(
 
   options.onProgress?.(`Freezing panes at ${cell}...`);
 
-  const sheet = sheetName
-    ? context.workbook.worksheets.getItem(sheetName)
-    : context.workbook.worksheets.getActiveWorksheet();
+  // Validate and resolve target sheet
+  let sheet: Excel.Worksheet;
+  if (sheetName) {
+    const ws = context.workbook.worksheets.getItemOrNullObject(sheetName);
+    ws.load("isNullObject");
+    await context.sync();
+    if (ws.isNullObject) {
+      return {
+        stepId: "",
+        status: "error",
+        message: `Sheet "${sheetName}" not found. Please check the sheet name.`,
+      };
+    }
+    sheet = ws;
+  } else {
+    sheet = context.workbook.worksheets.getActiveWorksheet();
+  }
 
   const range = sheet.getRange(cell);
   sheet.freezePanes.freezeAt(range);
@@ -46,7 +60,7 @@ async function handler(
   return {
     stepId: "",
     status: "success",
-    message: `Froze panes at ${cell}`,
+    message: `Froze panes at ${cell}${sheetName ? ` on "${sheetName}"` : ""}`,
   };
 }
 

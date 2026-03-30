@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useRef } from "react";
-import { ChatMessage, ExecutionPlan } from "../../engine/types";
+import { ChatMessage, ExecutionPlan, PlanOption } from "../../engine/types";
 import { sendChatMessage, ChatRequest } from "../../services/api";
 import { v4 as uuid } from "uuid";
 
@@ -14,14 +14,18 @@ interface ChatState {
   messages: ChatMessage[];
   isLoading: boolean;
   currentPlan: ExecutionPlan | null;
+  currentOptions: PlanOption[] | null;
+  interactionId: string | null;
   streamingText: string;
   error: string | null;
 }
 
 interface ChatActions {
   sendMessage: (text: string, rangeTokens?: { address: string; sheetName: string }[]) => Promise<void>;
+  stopMessage: () => void;
   clearHistory: () => void;
   setCurrentPlan: (plan: ExecutionPlan | null) => void;
+  setCurrentOptions: (options: PlanOption[] | null) => void;
   dismissError: () => void;
 }
 
@@ -37,6 +41,8 @@ export function useChat(): ChatState & ChatActions {
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<ExecutionPlan | null>(null);
+  const [currentOptions, setCurrentOptions] = useState<PlanOption[] | null>(null);
+  const [interactionId, setInteractionId] = useState<string | null>(null);
   const [streamingText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -67,7 +73,7 @@ export function useChat(): ChatState & ChatActions {
           .map((m) => ({ role: m.role, content: m.content }));
 
         // Get active sheet + workbook name from Excel context
-        let activeSheet = "Sheet1";
+        let activeSheet = "";   // empty = unknown; backend treats null/empty as "use context"
         let workbookName = "";
         try {
           await Excel.run(async (context) => {
@@ -96,13 +102,18 @@ export function useChat(): ChatState & ChatActions {
           id: uuid(),
           role: "assistant",
           content: response.message,
-          plan: response.plan,
+          plan: response.plans?.[0]?.plan ?? response.plan,
           timestamp: new Date().toISOString(),
         };
 
         setMessages((prev) => [...prev, assistantMsg]);
+        setInteractionId(response.interactionId ?? null);
 
-        if (response.responseType === "plan" && response.plan) {
+        if (response.responseType === "plans" && response.plans?.length) {
+          setCurrentOptions(response.plans);
+          setCurrentPlan(null);
+        } else if (response.responseType === "plan" && response.plan) {
+          setCurrentOptions(null);
           setCurrentPlan(response.plan);
         }
       } catch (err) {
@@ -127,6 +138,12 @@ export function useChat(): ChatState & ChatActions {
     [messages]
   );
 
+  const stopMessage = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsLoading(false);
+  }, []);
+
   const clearHistory = useCallback(() => {
     // Cancel any in-flight request immediately
     abortRef.current?.abort();
@@ -141,6 +158,8 @@ export function useChat(): ChatState & ChatActions {
       },
     ]);
     setCurrentPlan(null);
+    setCurrentOptions(null);
+    setInteractionId(null);
     setError(null);
   }, []);
 
@@ -150,11 +169,15 @@ export function useChat(): ChatState & ChatActions {
     messages,
     isLoading,
     currentPlan,
+    currentOptions,
+    interactionId,
     streamingText,
     error,
     sendMessage,
+    stopMessage,
     clearHistory,
     setCurrentPlan,
+    setCurrentOptions,
     dismissError,
   };
 }

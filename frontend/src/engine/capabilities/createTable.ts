@@ -10,7 +10,7 @@
 
 import { CapabilityMeta, CreateTableParams, StepResult, ExecutionOptions } from "../types";
 import { registry } from "../capabilityRegistry";
-import { resolveRange } from "./rangeUtils";
+import { resolveRange, resolveSheet } from "./rangeUtils";
 
 const meta: CapabilityMeta = {
   action: "createTable",
@@ -39,10 +39,11 @@ async function handler(
 
   options.onProgress?.(`Creating table "${tableName}"...`);
 
+  // Resolve sheet from the range address so this works on any sheet,
+  // not just the currently active one.
   const range = resolveRange(context, address);
-  const table = context.workbook.worksheets
-    .getActiveWorksheet()
-    .tables.add(range, hasHeaders);
+  const sheet = resolveSheet(context, address);
+  const table = sheet.tables.add(range, hasHeaders);
 
   table.name = tableName;
 

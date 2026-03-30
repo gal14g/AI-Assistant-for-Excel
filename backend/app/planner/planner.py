@@ -22,9 +22,7 @@ from ..config import settings
 from ..models.analytical_plan import (
     AnalyticalPlan,
     IntentType,
-    OperationType,
     SheetData,
-    StrategyType,
 )
 from ..models.request import ConversationMessage
 
@@ -65,10 +63,10 @@ OUTPUT SCHEMA — respond with ONLY this JSON:
   "clarification_question": null,
   "selected_tool_chain": ["<OperationType>", ...],
   "parameters": {
-    "primary_sheet": "<sheet name>",
-    "secondary_sheet": "<sheet name or null>",
-    "key_columns": ["<col>", ...],
-    "target_columns": ["<col>", ...],
+    "left_sheet": "<sheet name>",
+    "right_sheet": "<sheet name or null>",
+    "left_columns": ["<col>", ...],
+    "right_columns": ["<col>", ...],
     "strategy": "<StrategyType>",
     "threshold": 80,
     "group_by_columns": ["<col>", ...],
@@ -188,6 +186,8 @@ class AnalyticalPlanner:
             kwargs["api_base"] = settings.llm_base_url
         if settings.llm_api_version:
             kwargs["api_version"] = settings.llm_api_version
+        if settings.llm_json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
         return kwargs
 
     @staticmethod

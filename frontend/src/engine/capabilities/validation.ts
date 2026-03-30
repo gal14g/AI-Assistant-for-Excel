@@ -42,9 +42,11 @@ async function handler(
 
   switch (validationType) {
     case "list":
+      // Support both a comma-separated list (listValues) AND a range reference
+      // (formula = "=Sheet2!A:A"). Range reference is preferred for dynamic dropdowns.
       validationRule.list = {
         inCellDropDown: true,
-        source: listValues?.join(",") ?? "",
+        source: formula ?? listValues?.join(",") ?? "",
       };
       break;
 
@@ -113,10 +115,15 @@ async function handler(
 
 function mapValidationOperator(operator?: string): Excel.DataValidationOperator {
   switch (operator) {
-    case "between": return Excel.DataValidationOperator.between;
-    case "greaterThan": return Excel.DataValidationOperator.greaterThan;
-    case "lessThan": return Excel.DataValidationOperator.lessThan;
-    default: return Excel.DataValidationOperator.between;
+    case "between":             return Excel.DataValidationOperator.between;
+    case "notBetween":          return Excel.DataValidationOperator.notBetween;
+    case "equalTo":             return Excel.DataValidationOperator.equalTo;
+    case "notEqualTo":          return Excel.DataValidationOperator.notEqualTo;
+    case "greaterThan":         return Excel.DataValidationOperator.greaterThan;
+    case "greaterThanOrEqualTo":return Excel.DataValidationOperator.greaterThanOrEqualTo;
+    case "lessThan":            return Excel.DataValidationOperator.lessThan;
+    case "lessThanOrEqualTo":   return Excel.DataValidationOperator.lessThanOrEqualTo;
+    default:                    return Excel.DataValidationOperator.between;
   }
 }
 

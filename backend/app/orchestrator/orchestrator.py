@@ -301,8 +301,8 @@ class Orchestrator:
             return result
 
         if op_name == OperationType.compare_sheets.value:
-            left_name = params.get("left_sheet", "")
-            right_name = params.get("right_sheet", "")
+            left_name = params.get("left_sheet") or params.get("primary_sheet", "")
+            right_name = params.get("right_sheet") or params.get("secondary_sheet", "")
             left = self._require_sheet(left_name, op_name)
             right = self._require_sheet(right_name, op_name)
             if isinstance(left, ToolOutput):
@@ -339,8 +339,8 @@ class Orchestrator:
                     break
             if not match_data:
                 match_data = params.get("match_result", {})
-            left_name = params.get("left_sheet", "left")
-            right_name = params.get("right_sheet", "right")
+            left_name = params.get("left_sheet") or params.get("primary_sheet", "left")
+            right_name = params.get("right_sheet") or params.get("secondary_sheet", "right")
             return tool_module.explain_match_result(
                 match_data=match_data,
                 left_name=left_name,
@@ -397,8 +397,8 @@ class Orchestrator:
         already run (stored in context), its recommended_strategy may influence
         which columns/config to pass.
         """
-        left_name = params.get("left_sheet", "")
-        right_name = params.get("right_sheet", "")
+        left_name = params.get("left_sheet") or params.get("primary_sheet", "")
+        right_name = params.get("right_sheet") or params.get("secondary_sheet", "")
         left = self._require_sheet(left_name, op_name)
         right = self._require_sheet(right_name, op_name)
         if isinstance(left, ToolOutput):
@@ -407,13 +407,17 @@ class Orchestrator:
             return right
 
         # Resolve column lists from multiple possible key names
+        # key_columns / target_columns are the AnalyticalPlanner's naming convention
         left_columns = _coerce_list(
             params.get("left_columns")
+            or params.get("key_columns")
             or params.get("candidate_columns")
             or []
         )
         right_columns = _coerce_list(
             params.get("right_columns")
+            or params.get("target_columns")
+            or params.get("key_columns")
             or params.get("candidate_columns")
             or left_columns  # fall back to same column names if symmetric
         )

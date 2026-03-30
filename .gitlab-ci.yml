@@ -184,18 +184,27 @@ docker:build:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_TAG'
 
-# ── OPTIONAL: OpenShift deploy ────────────────────────────────────────────────
-# Uncomment and set OPENSHIFT_SERVER / OPENSHIFT_TOKEN / OPENSHIFT_NS variables.
+# ── OpenShift deploy ──────────────────────────────────────────────────────────
+# Requires CI/CD variables:
+#   OPENSHIFT_SERVER  — cluster API URL (e.g. https://api.your-cluster.example.com:6443)
+#   OPENSHIFT_TOKEN   — service account token with deploy permissions
+#   OPENSHIFT_NS      — target namespace/project name
 #
-# deploy:openshift:
-#   stage: docker
-#   image: registry.access.redhat.com/ubi8/oc-minimal:latest
-#   needs: [docker:build]
-#   script:
-#     - oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN" --insecure-skip-tls-verify
-#     - oc project "$OPENSHIFT_NS"
-#     - oc set image deployment/excel-copilot excel-copilot="$IMAGE"
-#     - oc rollout status deployment/excel-copilot --timeout=120s
-#   rules:
-#     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-#       when: manual
+# Triggered manually from the pipeline (when: manual).
+# On first deploy, apply the manifests in openshift/ first:
+#   oc apply -f openshift/
+
+deploy:openshift:
+  stage: docker
+  image: registry.access.redhat.com/ubi8/oc-minimal:latest
+  needs: [docker:build]
+  variables:
+    IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+  script:
+    - oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN" --insecure-skip-tls-verify
+    - oc project "$OPENSHIFT_NS"
+    - oc set image deployment/excel-copilot excel-copilot="$IMAGE"
+    - oc rollout status deployment/excel-copilot --timeout=120s
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $OPENSHIFT_SERVER'
+      when: manual

@@ -2,15 +2,17 @@
  * ChatPanel – Main chat interface. Microsoft Copilot for Excel style.
  */
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useCallback, useState } from "react";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { PlanPreview } from "./PlanPreview";
+import { PlanOptionsPanel } from "./PlanOptionsPanel";
 import { ExecutionTimeline } from "./ExecutionTimeline";
 import { SuggestedPrompts } from "./SuggestedPrompts";
 import { useChat } from "../hooks/useChat";
 import { useSelectionTracker } from "../hooks/useSelectionTracker";
 import { usePlanExecution } from "../hooks/usePlanExecution";
+import { sendFeedback } from "../../services/api";
 
 // Copilot logo SVG
 const CopilotLogo = () => (
@@ -33,6 +35,21 @@ export const ChatPanel: React.FC = () => {
   const execution = usePlanExecution();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Track the last executed plan ID so undo works after execution completes
+  const [lastExecutedPlanId, setLastExecutedPlanId] = useState<string | null>(null);
+  // Track which option tab is active — reset when options change
+  const optionsKey = chat.currentOptions?.map((o) => o.plan.planId).join(",") ?? "";
+  const [activeOptionIndex, setActiveOptionIndex] = useState(0);
+  const prevOptionsKey = useRef(optionsKey);
+  if (prevOptionsKey.current !== optionsKey) {
+    prevOptionsKey.current = optionsKey;
+    if (activeOptionIndex !== 0) setActiveOptionIndex(0);
+  }
+
+  // The currently selected plan (from options or single plan)
+  const activePlan = chat.currentOptions?.[activeOptionIndex]?.plan ?? chat.currentPlan;
+  const hasOptions = (chat.currentOptions?.length ?? 0) > 0;
+
   // Only show suggested prompts if only the welcome system message is present
   const showSuggested = chat.messages.length <= 1 && !chat.isLoading;
 
@@ -41,27 +58,49 @@ export const ChatPanel: React.FC = () => {
   }, [chat.messages, chat.streamingText, execution.executionState]);
 
   const handleRun = async () => {
-    if (chat.currentPlan) {
-      const state = await execution.runPlan(chat.currentPlan);
-      if (state?.status === "completed") chat.setCurrentPlan(null);
+    if (activePlan) {
+      setLastExecutedPlanId(activePlan.planId);
+      await execution.runPlan(activePlan);
+      // Record feedback (fire-and-forget)
+      if (chat.interactionId) {
+        sendFeedback(chat.interactionId, activePlan.planId, "applied");
+      }
+      chat.setCurrentPlan(null);
+      chat.setCurrentOptions(null);
     }
   };
 
   const handlePreview = async () => {
-    if (chat.currentPlan) await execution.previewPlan(chat.currentPlan);
+    if (activePlan) await execution.previewPlan(activePlan);
   };
 
   const handleUndo = async () => {
-    if (chat.currentPlan) await execution.undoLast(chat.currentPlan.planId);
+    const planId = activePlan?.planId ?? lastExecutedPlanId;
+    chat.setCurrentPlan(null);
+    chat.setCurrentOptions(null);
+    setLastExecutedPlanId(null);
+    if (planId) {
+      await execution.undoLast(planId);
+    }
   };
 
   const handleCancel = () => {
+    // Record dismiss feedback (fire-and-forget)
+    if (chat.interactionId) {
+      sendFeedback(chat.interactionId, null, "dismissed");
+    }
     chat.setCurrentPlan(null);
+    chat.setCurrentOptions(null);
+    setLastExecutedPlanId(null);
     execution.reset();
   };
 
+  const handleSend = useCallback(async (text: string, rangeTokens?: { address: string; sheetName: string }[]) => {
+    await chat.sendMessage(text, rangeTokens);
+  }, [chat]);
+
   const handleSuggestedPrompt = (prompt: string) => {
-    chat.sendMessage(prompt, []);
+    handleSend(prompt, []);
   };
 
   return (
@@ -118,8 +157,25 @@ export const ChatPanel: React.FC = () => {
           </div>
         )}
 
-        {/* Plan card */}
-        {chat.currentPlan && (
+        {/* Plan card — multi-option or single */}
+        {hasOptions && chat.currentOptions && (
+          <div style={{ marginBottom: 16 }}>
+            <PlanOptionsPanel
+              options={chat.currentOptions}
+              validation={execution.validationResult}
+              isExecuting={execution.isExecuting}
+              isPreviewing={execution.isPreviewing}
+              onPreview={handlePreview}
+              onRun={handleRun}
+              onCancel={handleCancel}
+              onUndo={handleUndo}
+              canUndo={execution.executionState?.status === "completed" || lastExecutedPlanId !== null}
+              onSelectOption={setActiveOptionIndex}
+              activeIndex={activeOptionIndex}
+            />
+          </div>
+        )}
+        {!hasOptions && chat.currentPlan && (
           <div style={{ marginBottom: 16 }}>
             <PlanPreview
               plan={chat.currentPlan}
@@ -130,7 +186,7 @@ export const ChatPanel: React.FC = () => {
               onRun={handleRun}
               onCancel={handleCancel}
               onUndo={handleUndo}
-              canUndo={execution.executionState?.status === "completed"}
+              canUndo={execution.executionState?.status === "completed" || lastExecutedPlanId !== null}
             />
           </div>
         )}
@@ -164,7 +220,7 @@ export const ChatPanel: React.FC = () => {
         <SuggestedPrompts onSelect={handleSuggestedPrompt} />
       )}
 
-      {/* Thinking indicator */}
+      {/* Thinking indicator with stop button */}
       {chat.isLoading && (
         <div style={{
           padding: "6px 16px", display: "flex", alignItems: "center", gap: 8,
@@ -180,12 +236,28 @@ export const ChatPanel: React.FC = () => {
             ))}
           </div>
           Copilot is thinking…
+          <button
+            onClick={chat.stopMessage}
+            style={{
+              marginLeft: "auto",
+              padding: "2px 10px",
+              border: "1px solid #d1d1d1",
+              borderRadius: 4,
+              backgroundColor: "#fff",
+              color: "#c50f1f",
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Stop
+          </button>
         </div>
       )}
 
       {/* Chat input */}
       <ChatInput
-        onSend={chat.sendMessage}
+        onSend={handleSend}
         disabled={chat.isLoading || execution.isExecuting}
         currentSelectionAddress={selection.currentSelectionAddress}
       />

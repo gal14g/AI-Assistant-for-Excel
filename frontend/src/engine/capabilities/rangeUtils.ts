@@ -27,14 +27,23 @@
 function normalizeAddress(address: string): string {
   address = address.trim();
   if (!address.startsWith("[[")) return address;
-  // Workbook-qualified: inner address starts with "[", so outer token is "[[...]...]"
-  // Match "[[" then capture "[..." then single "]" at end
-  const wbMatch = address.match(/^\[\[(\[.+)\]$/);
-  if (wbMatch) return wbMatch[1];
-  // Non-qualified: outer token is "[[...]]"
+
+  // Try double-closing-bracket form first: "[[...]]"
+  // This correctly handles BOTH:
+  //   "[[Sheet!Range]]"              → "Sheet!Range"
+  //   "[[[WB.xlsx]Sheet!Range]]"     → "[WB.xlsx]Sheet!Range"
+  // The greedy (.+) stops before the final "]]", so workbook brackets inside
+  // the capture are preserved and no trailing "]" is accidentally included.
   const plainMatch = address.match(/^\[\[(.+)\]\]$/);
   if (plainMatch) return plainMatch[1];
-  // Fallback: strip leading "[" and trailing "]" (partial bracket inclusion)
+
+  // Single-closing-bracket form: "[[WB.xlsx]Sheet!Range]" (older LLM format)
+  // Must be checked after plainMatch because it would also match "[[...]]"
+  // but would include an extra trailing "]" in the capture group.
+  const wbMatch = address.match(/^\[\[(\[.+)\]$/);
+  if (wbMatch) return wbMatch[1];
+
+  // Fallback: strip one leading "[" and trailing "]"
   return address.slice(1, address.endsWith("]") ? -1 : undefined);
 }
 

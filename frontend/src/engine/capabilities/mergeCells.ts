@@ -34,11 +34,13 @@ async function handler(
   options.onProgress?.(`Merging cells in ${params.range}...`);
 
   const range = resolveRange(context, params.range);
-  // across=true merges each row individually; false (default) merges the whole range
-  range.merge(params.across ?? false);
+  // across=true merges each row individually; false (default) merges the whole range.
+  // Also accept mergeType from the backend Pydantic model ("mergeAcross" → across=true).
+  const across = params.across ?? (params as any).mergeType === "mergeAcross";
+  range.merge(across);
   await context.sync();
 
-  const modeLabel = params.across ? "merge across" : "full merge";
+  const modeLabel = across ? "merge across" : "full merge";
   return {
     stepId: "",
     status: "success",

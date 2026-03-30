@@ -9,6 +9,7 @@
 
 import { CapabilityMeta, ApplyFilterParams, StepResult, ExecutionOptions } from "../types";
 import { registry } from "../capabilityRegistry";
+import { resolveRange, resolveSheet } from "./rangeUtils";
 
 const meta: CapabilityMeta = {
   action: "applyFilter",
@@ -35,19 +36,27 @@ async function handler(
 
   options.onProgress?.("Applying filter...");
 
-  // Try as table name first, fall back to range-based autoFilter
-  try {
-    const table = context.workbook.tables.getItem(tableNameOrRange);
-    const column = table.columns.getItemAt(columnIndex);
+  // Probe whether tableNameOrRange is a named Table or a range address.
+  // getItemOrNullObject avoids the crash that getItem() would cause.
+  const tableObj = context.workbook.tables.getItemOrNullObject(tableNameOrRange);
+  tableObj.load("isNullObject");
+  await context.sync();
+
+  if (!tableObj.isNullObject) {
+    // ── Table path ─────────────────────────────────────────────────────────
+    const column = tableObj.columns.getItemAt(columnIndex);
     column.load("name");
     await context.sync();
 
     if (criteria.filterOn === "values" && criteria.values) {
       column.filter.applyValuesFilter(criteria.values);
     } else if (criteria.filterOn === "custom" && criteria.operator && criteria.value !== undefined) {
+      const criterion1 = criteria.operator === "contains"
+        ? `*${criteria.value}*`
+        : `${mapOperator(criteria.operator)}${criteria.value}`;
       const filterCriteria: Excel.FilterCriteria = {
         filterOn: Excel.FilterOn.custom,
-        criterion1: `${mapOperator(criteria.operator)}${criteria.value}`,
+        criterion1,
       };
       column.filter.apply(filterCriteria);
     } else if (criteria.filterOn === "topItems" && criteria.value) {
@@ -59,37 +68,52 @@ async function handler(
     return {
       stepId: "",
       status: "success",
-      message: `Applied ${criteria.filterOn} filter on column ${columnIndex}`,
-    };
-  } catch {
-    // Fall back to autoFilter on range
-    const sheet = context.workbook.worksheets.getActiveWorksheet();
-    const range = sheet.getRange(tableNameOrRange);
-
-    if (criteria.filterOn === "values" && criteria.values) {
-      sheet.autoFilter.apply(range, columnIndex, {
-        filterOn: Excel.FilterOn.values,
-        values: criteria.values,
-      });
-    }
-
-    await context.sync();
-
-    return {
-      stepId: "",
-      status: "success",
-      message: `Applied autoFilter on ${tableNameOrRange} column ${columnIndex}`,
+      message: `Applied ${criteria.filterOn} filter on column ${columnIndex} of table "${tableNameOrRange}"`,
     };
   }
+
+  // ── AutoFilter path (range address) ───────────────────────────────────
+  // Use resolveRange/resolveSheet so the correct sheet is used regardless
+  // of which sheet is currently active.
+  const range = resolveRange(context, tableNameOrRange);
+  const sheet = resolveSheet(context, tableNameOrRange);
+
+  if (criteria.filterOn === "values" && criteria.values) {
+    sheet.autoFilter.apply(range, columnIndex, {
+      filterOn: Excel.FilterOn.values,
+      values: criteria.values,
+    });
+  } else if (criteria.filterOn === "custom" && criteria.operator && criteria.value !== undefined) {
+    const criterion1 = criteria.operator === "contains"
+      ? `*${criteria.value}*`
+      : `${mapOperator(criteria.operator)}${criteria.value}`;
+    sheet.autoFilter.apply(range, columnIndex, {
+      filterOn: Excel.FilterOn.custom,
+      criterion1,
+    });
+  } else if (criteria.filterOn === "topItems" && criteria.value) {
+    sheet.autoFilter.apply(range, columnIndex, {
+      filterOn: Excel.FilterOn.topItems,
+      criterion1: String(criteria.value),
+    });
+  }
+
+  await context.sync();
+
+  return {
+    stepId: "",
+    status: "success",
+    message: `Applied autoFilter on ${tableNameOrRange} column ${columnIndex}`,
+  };
 }
 
 function mapOperator(op: string): string {
   switch (op) {
     case "greaterThan": return ">";
-    case "lessThan": return "<";
-    case "equals": return "=";
-    case "contains": return "*";
-    default: return "=";
+    case "lessThan":    return "<";
+    case "equals":      return "=";
+    case "contains":    return "*";
+    default:            return "=";
   }
 }
 

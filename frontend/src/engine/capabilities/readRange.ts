@@ -44,20 +44,11 @@ async function handler(
       address: range.address,
       rowCount,
       columnCount: colCount,
-      headers: params.includeHeaders ? values[0] : undefined,
+      headers: params.includeHeaders ? (values ?? [])[0] : undefined,
     },
   };
 }
 
-
-function splitSheetAddress(address: string): [string, string] {
-  const idx = address.lastIndexOf("!");
-  let sheet = address.substring(0, idx);
-  if (sheet.startsWith("'") && sheet.endsWith("'")) {
-    sheet = sheet.slice(1, -1);
-  }
-  return [sheet, address.substring(idx + 1)];
-}
 
 registry.register(meta, handler as any);
 export { meta };

@@ -58,7 +58,12 @@ async function handler(
   // sparklineGroups.add(type, sourceData, locationRange) — ExcelApi 1.9
   // Cast worksheet to any because SparklineGroupCollection typing may be absent.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (locationRng.worksheet as any).sparklineGroups.add(excelType, dataRng, locationRng);
+  const sparklineGroup: any = (locationRng.worksheet as any).sparklineGroups.add(excelType, dataRng, locationRng);
+
+  // Apply optional color to the sparkline group
+  if (params.color) {
+    sparklineGroup.format.line.color = params.color;
+  }
 
   await context.sync();
 

@@ -2,8 +2,8 @@
 Chat request/response models for POST /api/chat.
 
 The chat endpoint uses a single LLM call that either returns a
-conversational reply (responseType="message") or a full execution
-plan (responseType="plan"), depending on what the user asked.
+conversational reply (responseType="message") or multiple execution
+plan options (responseType="plans") for the user to choose from.
 """
 
 from __future__ import annotations
@@ -23,7 +23,14 @@ class ChatRequest(BaseModel):
     conversationHistory: Optional[list[ConversationMessage]] = None
 
 
+class PlanOption(BaseModel):
+    optionLabel: str       # e.g. "Option A: Use SUMIF formulas"
+    plan: ExecutionPlan
+
+
 class ChatResponse(BaseModel):
-    responseType: Literal["message", "plan"]
+    responseType: Literal["message", "plan", "plans"]
     message: str
-    plan: Optional[ExecutionPlan] = None
+    plan: Optional[ExecutionPlan] = None           # single plan (backward compat)
+    plans: Optional[list[PlanOption]] = None        # multiple options
+    interactionId: Optional[str] = None             # DB interaction ID for feedback

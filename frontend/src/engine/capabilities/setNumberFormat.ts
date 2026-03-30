@@ -45,14 +45,28 @@ async function handler(
   options.onProgress?.(`Applying number format "${params.format}"...`);
 
   const range = resolveRange(context, params.range);
-  range.load(["rowCount", "columnCount"]);
-  await context.sync();
+
+  // Use getUsedRange so full-column refs like "A:D" don't allocate 1M rows.
+  // getUsedRange(false) returns the bounding box of actual cell contents.
+  // If the sheet is empty, fall back to the original range (single cell).
+  let targetRange: Excel.Range;
+  try {
+    const used = range.getUsedRange(false);
+    used.load(["rowCount", "columnCount"]);
+    await context.sync();
+    targetRange = used;
+  } catch {
+    // Range has no used cells — load the original range dimensions
+    range.load(["rowCount", "columnCount"]);
+    await context.sync();
+    targetRange = range;
+  }
 
   // numberFormat must be a 2D array matching the range dimensions
-  const formatGrid = Array.from({ length: range.rowCount }, () =>
-    Array(range.columnCount).fill(params.format)
+  const formatGrid = Array.from({ length: targetRange.rowCount }, () =>
+    Array(targetRange.columnCount).fill(params.format)
   );
-  range.numberFormat = formatGrid;
+  targetRange.numberFormat = formatGrid;
   await context.sync();
 
   return {

@@ -28,7 +28,7 @@ async function handler(
   params: WriteValuesParams,
   options: ExecutionOptions
 ): Promise<StepResult> {
-  const { range: address, values, valuesOnly = true } = params;
+  const { range: address, values, valuesOnly: _valuesOnly = true } = params;
 
   if (options.dryRun) {
     return {

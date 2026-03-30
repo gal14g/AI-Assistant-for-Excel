@@ -31,34 +31,21 @@ export async function captureSnapshot(
   planId: string,
   rangeAddresses: string[]
 ): Promise<PlanSnapshot> {
-  const cells: CellSnapshot[] = [];
-
+  // Load all ranges in a single batch + sync
+  // resolveRange handles workbook-qualified and Hebrew sheet names correctly
+  const ranges: Excel.Range[] = [];
   for (const address of rangeAddresses) {
-    const range = context.workbook.worksheets.getActiveWorksheet().getRange(address);
+    const range = resolveRange(context, address);
     range.load(["values", "numberFormat", "address"]);
-  }
-
-  await context.sync();
-
-  // Re-get and read the loaded values
-  for (const address of rangeAddresses) {
-    const range = context.workbook.worksheets.getActiveWorksheet().getRange(address);
-    range.load(["values", "numberFormat", "address"]);
+    ranges.push(range);
   }
   await context.sync();
 
-  // Rebuild from loaded proxy objects
-  for (const address of rangeAddresses) {
-    const range = context.workbook.worksheets.getActiveWorksheet().getRange(address);
-    range.load(["values", "numberFormat", "address"]);
-    await context.sync();
-
-    cells.push({
-      range: range.address,
-      values: range.values as (string | number | boolean | null)[][],
-      numberFormats: range.numberFormat as string[][],
-    });
-  }
+  const cells: CellSnapshot[] = ranges.map((range) => ({
+    range: range.address,
+    values: range.values as (string | number | boolean | null)[][],
+    numberFormats: range.numberFormat as string[][],
+  }));
 
   const snapshot: PlanSnapshot = {
     planId,

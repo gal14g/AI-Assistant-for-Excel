@@ -32,11 +32,26 @@ async function handler(
   options.onProgress?.("Auto-fitting column widths...");
 
   if (params.range) {
+    // Range provided — fit only those columns, resolving sheet from the address
     resolveRange(context, params.range).format.autofitColumns();
   } else {
-    const sheet = params.sheetName
-      ? context.workbook.worksheets.getItem(params.sheetName)
-      : context.workbook.worksheets.getActiveWorksheet();
+    // No range — fit all used columns on the target sheet
+    let sheet: Excel.Worksheet;
+    if (params.sheetName) {
+      const ws = context.workbook.worksheets.getItemOrNullObject(params.sheetName);
+      ws.load("isNullObject");
+      await context.sync();
+      if (ws.isNullObject) {
+        return {
+          stepId: "",
+          status: "error",
+          message: `Sheet "${params.sheetName}" not found. Please check the sheet name.`,
+        };
+      }
+      sheet = ws;
+    } else {
+      sheet = context.workbook.worksheets.getActiveWorksheet();
+    }
     sheet.getUsedRange().format.autofitColumns();
   }
 
@@ -47,7 +62,7 @@ async function handler(
     status: "success",
     message: params.range
       ? `Auto-fitted columns in ${params.range}`
-      : `Auto-fitted all used columns${params.sheetName ? ` on ${params.sheetName}` : ""}`,
+      : `Auto-fitted all used columns${params.sheetName ? ` on "${params.sheetName}"` : ""}`,
   };
 }
 

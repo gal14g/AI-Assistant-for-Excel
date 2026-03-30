@@ -36,9 +36,21 @@ async function handler(
 
   options.onProgress?.("Reading values for cleanup...");
 
-  const range = resolveRange(context, address);
-  range.load("values");
-  await context.sync();
+  // Use getUsedRange so full-column refs like "A:D" don't load 1M rows.
+  // Office.js proxy errors only surface at context.sync() time, so the sync
+  // must be inside the try block for the catch to work.
+  const raw = resolveRange(context, address);
+  let range: Excel.Range;
+  try {
+    const used = raw.getUsedRange(false);
+    used.load("values");
+    await context.sync();
+    range = used;
+  } catch {
+    raw.load("values");
+    await context.sync();
+    range = raw;
+  }
 
   const values = range.values ?? [];
   options.onProgress?.(`Cleaning ${values.length} rows...`);

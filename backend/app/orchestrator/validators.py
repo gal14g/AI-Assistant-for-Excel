@@ -4,9 +4,20 @@ Validates that the plan is safe to execute before any tool runs.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from ..models.analytical_plan import AnalyticalPlan, IntentType, OperationType, SheetData
+
+# Matches Excel range/column addresses like "C:D", "A:A", "B", "C2:D50"
+# These should not be validated against header names — they are references
+# that will be resolved by the orchestrator at execution time.
+_RANGE_ADDR_RE = re.compile(r"^[A-Za-z]{1,3}(\d+)?(?::[A-Za-z]{1,3}(\d+)?)?$")
+
+
+def _is_range_ref(col: str) -> bool:
+    """True when *col* looks like an Excel range address, not a header name."""
+    return bool(_RANGE_ADDR_RE.match(col.strip()))
 
 
 # ── Result type ───────────────────────────────────────────────────────────────
@@ -234,7 +245,7 @@ def _check_columns(
             # Sheet missing → already reported or not specified; skip column check
             continue
         available = set(sheet.header_row if hasattr(sheet, "header_row") else sheet.headers or [])
-        missing = [c for c in cols if c not in available]
+        missing = [c for c in cols if c not in available and not _is_range_ref(c)]
         if missing:
             errors.append(
                 f"Column(s) {missing} (from parameter '{key}') not found in "
@@ -267,7 +278,7 @@ def _check_columns(
         else:
             cols_list = []
 
-        missing = [str(c) for c in cols_list if str(c) not in available]
+        missing = [str(c) for c in cols_list if str(c) not in available and not _is_range_ref(str(c))]
         if missing:
             errors.append(
                 f"Column(s) {missing} (from parameter '{col_key}') not found in "

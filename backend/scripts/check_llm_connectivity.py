@@ -14,7 +14,7 @@ Usage (locally):
   python backend/scripts/check_llm_connectivity.py
 
 Environment variables (same as the application):
-  LLM_MODEL      — LiteLLM model string  (default: ollama/llama3)
+  LLM_MODEL      — LiteLLM model string  (default: ollama/qwen3:27b)
   LLM_API_KEY    — API key if required   (default: empty)
   LLM_BASE_URL   — Base URL for local/proxy endpoints (default: empty)
 """
@@ -33,7 +33,7 @@ def check() -> None:
         print("❌  litellm is not installed. Run: pip install litellm", file=sys.stderr)
         sys.exit(1)
 
-    model       = os.environ.get("LLM_MODEL",    "ollama/llama3")
+    model       = os.environ.get("LLM_MODEL",    "ollama/qwen3:27b")
     api_key     = os.environ.get("LLM_API_KEY",   "")
     base_url    = os.environ.get("LLM_BASE_URL",  "")
 

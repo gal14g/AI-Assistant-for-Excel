@@ -40,6 +40,14 @@ class StepAction(str, Enum):
     setNumberFormat = "setNumberFormat"
     insertDeleteRows = "insertDeleteRows"
     addSparkline = "addSparkline"
+    formatCells = "formatCells"
+    clearRange = "clearRange"
+    hideShow = "hideShow"
+    addComment = "addComment"
+    addHyperlink = "addHyperlink"
+    groupRows = "groupRows"
+    setRowColSize = "setRowColSize"
+    copyPasteRange = "copyPasteRange"
 
 
 # --- Step parameter models ---
@@ -69,6 +77,8 @@ class MatchRecordsParams(BaseModel):
     matchType: str = "exact"
     outputRange: str
     preferFormula: Optional[bool] = True
+    # When set, write this constant string for matched rows (forces composite key matching)
+    writeValue: Optional[str] = None
 
 
 class GroupSumParams(BaseModel):
@@ -143,6 +153,7 @@ class AddConditionalFormatParams(BaseModel):
     values: Optional[list[Union[str, int, float]]] = None
     format: Optional[dict] = None
     text: Optional[str] = None
+    formula: Optional[str] = None  # For formula-based conditional formats
 
 
 class CleanupTextParams(BaseModel):
@@ -225,6 +236,68 @@ class AddSparklineParams(BaseModel):
     color: Optional[str] = None
 
 
+class BordersParams(BaseModel):
+    style: str = "thin"
+    color: Optional[str] = None
+    edges: Optional[list[str]] = None
+
+
+class FormatCellsParams(BaseModel):
+    range: str
+    bold: Optional[bool] = None
+    italic: Optional[bool] = None
+    underline: Optional[bool] = None
+    strikethrough: Optional[bool] = None
+    fontSize: Optional[int] = None
+    fontFamily: Optional[str] = None
+    fontColor: Optional[str] = None
+    fillColor: Optional[str] = None
+    horizontalAlignment: Optional[str] = None
+    verticalAlignment: Optional[str] = None
+    wrapText: Optional[bool] = None
+    borders: Optional[BordersParams] = None
+
+
+class ClearRangeParams(BaseModel):
+    range: str
+    clearType: str = "contents"
+
+
+class HideShowParams(BaseModel):
+    target: str
+    rangeOrName: str
+    hide: bool = True
+
+
+class AddCommentParams(BaseModel):
+    cell: str
+    content: str
+    author: Optional[str] = None
+
+
+class AddHyperlinkParams(BaseModel):
+    cell: str
+    url: str
+    displayText: Optional[str] = None
+
+
+class GroupRowsParams(BaseModel):
+    range: str
+    operation: str = "group"
+
+
+class SetRowColSizeParams(BaseModel):
+    range: str
+    dimension: str
+    size: float
+
+
+class CopyPasteRangeParams(BaseModel):
+    sourceRange: str
+    destinationRange: str
+    pasteType: Optional[str] = "all"
+
+
 # --- Plan step ---
 
 
@@ -279,4 +352,12 @@ ACTION_PARAM_MODELS: dict[StepAction, type[BaseModel]] = {
     StepAction.setNumberFormat:      SetNumberFormatParams,
     StepAction.insertDeleteRows:     InsertDeleteRowsParams,
     StepAction.addSparkline:         AddSparklineParams,
+    StepAction.formatCells:          FormatCellsParams,
+    StepAction.clearRange:           ClearRangeParams,
+    StepAction.hideShow:             HideShowParams,
+    StepAction.addComment:           AddCommentParams,
+    StepAction.addHyperlink:         AddHyperlinkParams,
+    StepAction.groupRows:            GroupRowsParams,
+    StepAction.setRowColSize:        SetRowColSizeParams,
+    StepAction.copyPasteRange:       CopyPasteRangeParams,
 }

@@ -23,7 +23,7 @@
  * reliably in every Excel version (desktop, web, Mac) without context issues.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 
 export interface WorkbookContext {
   sheetName: string;

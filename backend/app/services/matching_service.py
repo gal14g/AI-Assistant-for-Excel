@@ -5,7 +5,7 @@ These are pure Python decision functions — no I/O, no LLM calls.
 """
 from __future__ import annotations
 
-from ..models.analytical_plan import ColumnProfile, StrategyType
+from ..models.analytical_plan import StrategyType
 
 
 # ── Column sufficiency ────────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ class PlanRequest(BaseModel):
 
     userMessage: str
     rangeTokens: Optional[list[RangeTokenRef]] = None
-    activeSheet: Optional[str] = "Sheet1"
+    activeSheet: Optional[str] = None
     # Workbook identity – used to qualify cross-sheet and cross-file references
     workbookName: Optional[str] = None
     workbookPath: Optional[str] = None

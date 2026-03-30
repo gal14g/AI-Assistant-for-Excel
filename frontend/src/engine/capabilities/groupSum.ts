@@ -10,7 +10,7 @@
 
 import { CapabilityMeta, GroupSumParams, StepResult, ExecutionOptions } from "../types";
 import { registry } from "../capabilityRegistry";
-import { resolveRange, quoteSheetInRef } from "./rangeUtils";
+import { resolveRange, quoteSheetInRef, stripWorkbookQualifier } from "./rangeUtils";
 
 const meta: CapabilityMeta = {
   action: "groupSum",
@@ -24,7 +24,8 @@ async function handler(
   params: GroupSumParams,
   options: ExecutionOptions
 ): Promise<StepResult> {
-  const { dataRange, groupByColumn, sumColumn, outputRange, preferFormula = true, includeHeaders } = params;
+  const { dataRange, groupByColumn: _groupByColumn, sumColumn: _sumColumn, outputRange, preferFormula = true } = params;
+  const _includeHeaders = params.includeHeaders ?? true;
 
   if (options.dryRun) {
     return {
@@ -52,7 +53,7 @@ async function formulaGroupSum(
   await context.sync();
 
   const data = dataRng.values ?? [];
-  const startRow = params.includeHeaders ? 1 : 0;
+  const startRow = (params.includeHeaders ?? true) ? 1 : 0;
 
   // Extract unique group keys
   const groupCol = params.groupByColumn - 1;
@@ -74,9 +75,10 @@ async function formulaGroupSum(
     output.push([String(data[0][groupCol]), `Sum of ${String(data[0][params.sumColumn - 1])}`]);
   }
 
-  // Build column references for SUMIF
-  const criteriaCol = getColumnFromRange(params.dataRange, groupCol);
-  const sumCol = getColumnFromRange(params.dataRange, params.sumColumn - 1);
+  // Build column references for SUMIF (strip workbook qualifier for formula strings)
+  const dataRangeForFormula = stripWorkbookQualifier(params.dataRange);
+  const criteriaCol = getColumnFromRange(dataRangeForFormula, groupCol);
+  const sumCol = getColumnFromRange(dataRangeForFormula, params.sumColumn - 1);
 
   for (const key of uniqueKeys) {
     const criteriaValue = typeof key === "string" ? `"${key}"` : key;
@@ -117,7 +119,7 @@ async function computedGroupSum(
   await context.sync();
 
   const data = dataRng.values ?? [];
-  const startRow = params.includeHeaders ? 1 : 0;
+  const startRow = (params.includeHeaders ?? true) ? 1 : 0;
   const groupCol = params.groupByColumn - 1;
   const sumCol = params.sumColumn - 1;
 

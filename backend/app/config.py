@@ -1,71 +1,63 @@
 """
 Application configuration loaded from environment variables.
 
-LLM provider is fully generic via LiteLLM.  Set LLM_MODEL to any model string
-that LiteLLM understands:
-
-  Provider        | Example LLM_MODEL value
-  --------------- | --------------------------------------------------
-  OpenAI          | gpt-4o  /  gpt-4-turbo  /  gpt-3.5-turbo
-  Anthropic       | claude-sonnet-4-20250514  /  claude-opus-4-20250514
-  Google Gemini   | gemini/gemini-1.5-pro
-  Ollama (local)  | ollama/llama3  /  ollama/mistral
-  Azure OpenAI    | azure/<your-deployment-name>
-  AWS Bedrock     | bedrock/anthropic.claude-3-sonnet-20240229-v1:0
-  LiteLLM proxy   | openai/<model>  (set LLM_BASE_URL to proxy URL)
-  Any OpenAI-compat endpoint  | openai/<model>  + LLM_BASE_URL
-
-For providers that need an API key, set LLM_API_KEY.
-For local/self-hosted models (Ollama, custom endpoints), leave it empty or omit it.
-For Azure, also set LLM_API_BASE, LLM_API_VERSION.
+All settings are read from the single .env file at the project root.
+LLM provider is fully generic via LiteLLM — see .env.example for provider table.
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+# Resolve the project root .env regardless of the working directory.
+# config.py lives at backend/app/config.py → parents[2] = project root.
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
     """Application settings with defaults for local development."""
 
     # ── LLM provider ──────────────────────────────────────────────────────────
-    # LiteLLM model string (see table above).  Defaults to Claude Sonnet.
     llm_model: str = "claude-sonnet-4-20250514"
-
-    # API key for the chosen provider.  Leave empty for local models (Ollama).
     llm_api_key: str = ""
-
-    # Optional: override the API base URL.
-    #   Ollama local:  http://localhost:11434
-    #   LiteLLM proxy: http://my-proxy:4000
-    #   Azure:         https://<resource>.openai.azure.com/
     llm_base_url: str = ""
-
-    # Optional: API version (Azure only)
     llm_api_version: str = ""
 
     # Generation parameters
     llm_max_tokens: int = 4096
-    llm_temperature: float = 0.1  # Low temperature for deterministic plans
+    llm_temperature: float = 0.1
+
+    # Force JSON output mode (response_format: json_object).
+    # Recommended for Qwen, Cohere, and smaller Ollama models.
+    llm_json_mode: bool = False
+
+    # ── Embedding / Capability Search ────────────────────────────────────────
+    embedding_model: str = "all-MiniLM-L6-v2"
+    chroma_persist_dir: str = ""          # auto-resolved to backend/data/chroma if empty
+    capability_top_k: int = 10
+
+    # ── Few-shot examples ────────────────────────────────────────────────────
+    few_shot_top_k: int = 5               # how many dynamic examples to retrieve per query
+
+    # ── Feedback DB ───────────────────────────────────────────────────────────
+    feedback_db_path: str = ""            # auto-resolved to backend/data/feedback.db if empty
 
     # ── Server ────────────────────────────────────────────────────────────────
     host: str = "0.0.0.0"
-    port: int = 8000          # Override with PORT env var (e.g. PORT=8080 for OpenShift)
+    port: int = 8000
     cors_origins: list[str] = ["https://localhost:3000", "https://localhost:3001"]
     debug: bool = True
 
     # ── Deployment mode ───────────────────────────────────────────────────────
-    # Set OPENSHIFT=true in production to switch to production defaults.
-    # Individual settings below can still be overridden independently.
     openshift: bool = False
-
-    # Serve the built React frontend as static files from this FastAPI process.
-    # Automatically enabled when OPENSHIFT=true (can be overridden with SERVE_STATIC=false).
     serve_static: bool = False
-
-    # Directory containing the built frontend (output of `npm run build`).
-    # In Docker this is ./static (copied from frontend/dist in the build stage).
     static_dir: str = "./static"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    model_config = {
+        "env_file": str(_ENV_FILE),
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()

@@ -29,8 +29,21 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
 
-    # Validate the plan if one was generated
-    if result.responseType == "plan" and result.plan:
+    # Validate all plans before returning
+    if result.responseType == "plans" and result.plans:
+        valid_options = []
+        for option in result.plans:
+            validation = validate_plan(option.plan)
+            if validation.valid:
+                valid_options.append(option)
+        if not valid_options:
+            error_msgs = "; ".join(e.message for e in validation.errors)
+            raise HTTPException(
+                status_code=422,
+                detail=f"Generated plan failed validation: {error_msgs}",
+            )
+        result.plans = valid_options
+    elif result.responseType == "plan" and result.plan:
         validation = validate_plan(result.plan)
         if not validation.valid:
             error_msgs = "; ".join(e.message for e in validation.errors)

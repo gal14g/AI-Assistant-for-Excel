@@ -37,9 +37,23 @@ async function handler(
 
   options.onProgress?.(`Creating ${chartType} chart...`);
 
-  const sheet = sheetName
-    ? context.workbook.worksheets.getItem(sheetName)
-    : context.workbook.worksheets.getActiveWorksheet();
+  // Validate the target sheet if explicitly provided, then resolve it.
+  let sheet: Excel.Worksheet;
+  if (sheetName) {
+    const ws = context.workbook.worksheets.getItemOrNullObject(sheetName);
+    ws.load("isNullObject");
+    await context.sync();
+    if (ws.isNullObject) {
+      return {
+        stepId: "",
+        status: "error",
+        message: `Sheet "${sheetName}" not found. Please check the sheet name.`,
+      };
+    }
+    sheet = ws;
+  } else {
+    sheet = context.workbook.worksheets.getActiveWorksheet();
+  }
 
   const range = resolveRange(context, dataRange);
   const excelChartType = mapChartType(chartType);
@@ -85,17 +99,16 @@ async function handler(
 function mapChartType(type: string): Excel.ChartType {
   const map: Record<string, Excel.ChartType> = {
     columnClustered: Excel.ChartType.columnClustered,
-    columnStacked: Excel.ChartType.columnStacked,
-    bar: Excel.ChartType.barClustered,
-    line: Excel.ChartType.line,
-    pie: Excel.ChartType.pie,
-    area: Excel.ChartType.area,
-    scatter: Excel.ChartType.xyscatter,
-    combo: Excel.ChartType.columnClustered, // combo requires special handling
+    columnStacked:   Excel.ChartType.columnStacked,
+    bar:             Excel.ChartType.barClustered,
+    line:            Excel.ChartType.line,
+    pie:             Excel.ChartType.pie,
+    area:            Excel.ChartType.area,
+    scatter:         Excel.ChartType.xyscatter,
+    combo:           Excel.ChartType.columnClustered, // combo requires special handling
   };
   return map[type] ?? Excel.ChartType.columnClustered;
 }
-
 
 registry.register(meta, handler as any);
 export { meta };

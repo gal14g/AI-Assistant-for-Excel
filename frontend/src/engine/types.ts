@@ -38,7 +38,15 @@ export type StepAction =
   | "mergeCells"
   | "setNumberFormat"
   | "insertDeleteRows"
-  | "addSparkline";
+  | "addSparkline"
+  | "formatCells"
+  | "clearRange"
+  | "hideShow"
+  | "addComment"
+  | "addHyperlink"
+  | "groupRows"
+  | "setRowColSize"
+  | "copyPasteRange";
 
 // ---------------------------------------------------------------------------
 // Step parameter shapes – one per action
@@ -67,11 +75,17 @@ export interface WriteFormulaParams {
 export interface MatchRecordsParams {
   lookupRange: string; // range containing lookup keys
   sourceRange: string; // range to search in (key column)
-  returnColumns: number[]; // 1-based column offsets to return
+  returnColumns?: number[]; // 1-based column offsets to return (default [1]); not required when writeValue is set
   matchType: "exact" | "approximate";
   outputRange: string; // where to write results
   /** Prefer native VLOOKUP/XLOOKUP formulas over computed values */
   preferFormula?: boolean;
+  /**
+   * When set, write this constant string to outputRange for matched rows
+   * and empty string for unmatched rows. Forces deterministic JS matching
+   * (no formula written). Required for composite multi-column matching.
+   */
+  writeValue?: string;
 }
 
 export interface GroupSumParams {
@@ -86,7 +100,7 @@ export interface GroupSumParams {
 
 export interface CreateTableParams {
   range: string;
-  tableName: string;
+  tableName?: string; // auto-generated if omitted
   hasHeaders?: boolean;
   style?: string; // e.g. "TableStyleMedium2"
 }
@@ -106,7 +120,7 @@ export interface FilterCriteria {
 
 export interface SortRangeParams {
   range: string;
-  sortFields: SortField[];
+  sortFields?: SortField[]; // defaults to first column ascending if omitted
   hasHeaders?: boolean;
 }
 
@@ -117,11 +131,11 @@ export interface SortField {
 
 export interface CreatePivotParams {
   sourceRange: string;
-  destinationRange: string; // top-left cell
-  pivotName: string;
-  rows: string[]; // field names
+  destinationRange?: string; // new sheet created if omitted
+  pivotName?: string;        // auto-generated if omitted
+  rows?: string[];           // auto-detected from headers if omitted
   columns?: string[];
-  values: PivotValue[];
+  values?: PivotValue[];     // auto-detected from headers if omitted
   filters?: string[];
 }
 
@@ -152,9 +166,10 @@ export interface CreateChartParams {
 
 export interface AddConditionalFormatParams {
   range: string;
-  ruleType: "cellValue" | "colorScale" | "dataBar" | "iconSet" | "text";
+  /** "formula" uses a custom Excel formula (e.g. "=$D2=\"\"") to trigger the format */
+  ruleType: "cellValue" | "colorScale" | "dataBar" | "iconSet" | "text" | "formula";
   /** For cellValue rules */
-  operator?: "greaterThan" | "lessThan" | "between" | "equalTo";
+  operator?: "greaterThan" | "greaterThanOrEqualTo" | "lessThan" | "lessThanOrEqualTo" | "between" | "notBetween" | "equalTo" | "notEqualTo";
   values?: (string | number)[];
   format?: {
     fillColor?: string;
@@ -163,6 +178,8 @@ export interface AddConditionalFormatParams {
   };
   /** For text rules */
   text?: string;
+  /** For formula-based rules: an Excel formula string starting with "=" */
+  formula?: string;
 }
 
 export interface CleanupTextParams {
@@ -228,7 +245,9 @@ export interface AutoFitColumnsParams {
 
 export interface MergeCellsParams {
   range: string;
-  across?: boolean; // merge across rows instead of full merge
+  across?: boolean;    // merge across rows instead of full merge
+  /** Backend Pydantic alias — "mergeAcross" maps to across=true */
+  mergeType?: "merge" | "mergeAcross" | "mergeAllCells";
 }
 
 export interface SetNumberFormatParams {
@@ -259,6 +278,80 @@ export interface AddSparklineParams {
   color?: string;
 }
 
+export interface FormatCellsParams {
+  range: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  fontSize?: number;
+  fontFamily?: string;       // e.g. "Calibri", "Arial"
+  fontColor?: string;        // hex e.g. "#FF0000"
+  fillColor?: string;        // hex e.g. "#FFFF00"
+  horizontalAlignment?: "left" | "center" | "right" | "justify";
+  verticalAlignment?: "top" | "middle" | "bottom";
+  wrapText?: boolean;
+  borders?: {
+    style: "thin" | "medium" | "thick" | "dashed" | "dotted" | "double" | "none";
+    color?: string;           // hex
+    edges?: ("top" | "bottom" | "left" | "right" | "all" | "outside" | "inside")[];
+  };
+}
+
+export interface ClearRangeParams {
+  range: string;
+  /** What to clear: "contents" (values+formulas), "formats", "all" (both) */
+  clearType: "contents" | "formats" | "all";
+}
+
+export interface HideShowParams {
+  /** What to hide/show */
+  target: "rows" | "columns" | "sheet";
+  /** The range of rows/columns (e.g. "A:C" for columns, "2:5" for rows), or sheet name for target="sheet" */
+  rangeOrName: string;
+  /** true = hide, false = unhide */
+  hide: boolean;
+}
+
+export interface AddCommentParams {
+  /** Single cell or range — one comment per cell */
+  cell: string;
+  content: string;
+  author?: string;
+}
+
+export interface AddHyperlinkParams {
+  cell: string;
+  url: string;
+  /** Display text — defaults to url if omitted */
+  displayText?: string;
+}
+
+export interface GroupRowsParams {
+  /** Range of rows or columns to group, e.g. "3:8" or "B:E" */
+  range: string;
+  /** "group" adds outline grouping, "ungroup" removes it */
+  operation: "group" | "ungroup";
+}
+
+export interface SetRowColSizeParams {
+  /** Row range (e.g. "2:5") or column range (e.g. "A:C") */
+  range: string;
+  /** Target dimension: "rowHeight" or "columnWidth" */
+  dimension: "rowHeight" | "columnWidth";
+  /** Size in points (rowHeight) or characters (columnWidth) */
+  size: number;
+}
+
+export interface CopyPasteRangeParams {
+  /** Source range to copy from */
+  sourceRange: string;
+  /** Destination range (top-left cell is enough) */
+  destinationRange: string;
+  /** What to paste: "all" (default), "values", "formats", "formulas" */
+  pasteType?: "all" | "values" | "formats" | "formulas";
+}
+
 // ---------------------------------------------------------------------------
 // Union of all param types
 // ---------------------------------------------------------------------------
@@ -285,7 +378,15 @@ export type StepParams =
   | MergeCellsParams
   | SetNumberFormatParams
   | InsertDeleteRowsParams
-  | AddSparklineParams;
+  | AddSparklineParams
+  | FormatCellsParams
+  | ClearRangeParams
+  | HideShowParams
+  | AddCommentParams
+  | AddHyperlinkParams
+  | GroupRowsParams
+  | SetRowColSizeParams
+  | CopyPasteRangeParams;
 
 // ---------------------------------------------------------------------------
 // Plan step
@@ -387,6 +488,11 @@ export interface RangeToken {
   address: string;
   /** Sheet name */
   sheetName: string;
+}
+
+export interface PlanOption {
+  optionLabel: string;
+  plan: ExecutionPlan;
 }
 
 export interface ChatMessage {

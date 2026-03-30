@@ -4,7 +4,6 @@ Text / data cleaning tools.
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from ..models.analytical_plan import SheetData
 from ..models.tool_output import ToolOutput

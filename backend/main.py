@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import plan, stream, chat
+from app.routers import plan, chat, feedback
 from app.routers import analyze
 
 app = FastAPI(
@@ -47,8 +47,20 @@ app.add_middleware(
 # ── API routers ───────────────────────────────────────────────────────────────
 app.include_router(chat.router)
 app.include_router(plan.router)
-app.include_router(stream.router)
 app.include_router(analyze.router)
+app.include_router(feedback.router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialise vector stores, example store, and feedback database."""
+    from app.db import init_db
+    from app.services.capability_store import init_store
+    from app.services.example_store import init_example_store
+
+    init_store()
+    await init_db()
+    await init_example_store()
 
 
 @app.get("/health")
@@ -58,6 +70,21 @@ async def health():
         "version": "1.0.0",
         "mode": "openshift" if settings.openshift else "local",
     }
+
+
+@app.get("/ready")
+async def readiness():
+    """Readiness probe — checks that the LLM model config is valid."""
+    errors = []
+    if not settings.llm_model:
+        errors.append("LLM_MODEL is not set")
+    from app.services.capability_store import is_ready as store_ready
+    if not store_ready():
+        errors.append("Capability store not initialized")
+    if errors:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=503, content={"ready": False, "errors": errors})
+    return {"ready": True, "model": settings.llm_model}
 
 
 # ── Static file serving (production / OpenShift) ──────────────────────────────

@@ -9,6 +9,7 @@
 
 import { CapabilityMeta, FindReplaceParams, StepResult, ExecutionOptions } from "../types";
 import { registry } from "../capabilityRegistry";
+import { resolveRange } from "./rangeUtils";
 
 const meta: CapabilityMeta = {
   action: "findReplace",
@@ -34,45 +35,94 @@ async function handler(
 
   options.onProgress?.(`Finding "${find}"...`);
 
-  const sheet = sheetName
-    ? context.workbook.worksheets.getItem(sheetName)
-    : context.workbook.worksheets.getActiveWorksheet();
+  // Validate and resolve target sheet
+  let sheet: Excel.Worksheet;
+  if (sheetName) {
+    const ws = context.workbook.worksheets.getItemOrNullObject(sheetName);
+    ws.load("isNullObject");
+    await context.sync();
+    if (ws.isNullObject) {
+      return {
+        stepId: "",
+        status: "error",
+        message: `Sheet "${sheetName}" not found. Please check the sheet name.`,
+      };
+    }
+    sheet = ws;
+  } else {
+    sheet = context.workbook.worksheets.getActiveWorksheet();
+  }
 
-  const range = address ? sheet.getRange(address) : sheet.getUsedRange();
-  range.load("values");
+  // If address includes a sheet qualifier (e.g. "תוכנה!A:I"), use resolveRange
+  // so it is correctly resolved regardless of active sheet.
+  // If address is plain (e.g. "A1:C10"), use the already-resolved sheet object.
+  const range = address
+    ? address.includes("!")
+      ? resolveRange(context, address)
+      : sheet.getRange(address)
+    : sheet.getUsedRange();
+  // Load both raw values (numbers for dates) and displayed text (what the user sees).
+  // Matching is done against text so "19/04/2026" matches regardless of whether the
+  // cell stores a serial number or a literal string.
+  range.load(["values", "text"]);
   await context.sync();
 
   const values = range.values ?? [];
+  const texts = range.text ?? [];
   let replacements = 0;
 
   const findStr = matchCase ? find : find.toLowerCase();
 
-  const newValues = values.map((row) =>
-    row.map((cell) => {
-      if (typeof cell !== "string") return cell;
-      const cellStr = matchCase ? cell : cell.toLowerCase();
+  // Pre-parse find/replace as dates for serial-number replacement
+  const findDate = parseDateString(find);
+  const replaceDate = parseDateString(replace);
+  const replaceSerial = findDate && replaceDate ? dateToExcelSerial(replaceDate) : null;
+
+  const isFormula = replace.startsWith("=");
+
+  for (let ri = 0; ri < texts.length; ri++) {
+    const textRow = texts[ri] ?? [];
+    const valRow = values[ri] ?? [];
+
+    for (let ci = 0; ci < textRow.length; ci++) {
+      const displayText = textRow[ci];
+      if (typeof displayText !== "string" || displayText === "") continue;
+
+      const displayStr = matchCase ? displayText : displayText.toLowerCase();
+      let matched = false;
 
       if (matchEntireCell) {
-        if (cellStr === findStr) {
-          replacements++;
-          return replace;
-        }
-        return cell;
+        matched = displayStr === findStr;
+      } else {
+        matched = displayStr.includes(findStr);
       }
 
-      if (cellStr.includes(findStr)) {
-        // Use regex for case-insensitive replacement
+      if (!matched) continue;
+
+      const rawVal = valRow[ci];
+      const cell = range.getCell(ri, ci);
+
+      // Decide what value to write based on the cell's underlying type:
+      // - If the raw value is a number (date serial), write a new serial to preserve formatting.
+      // - If the raw value is a string, do a normal string replacement.
+      if (typeof rawVal === "number" && replaceSerial != null) {
+        cell.values = [[replaceSerial]];
+      } else if (isFormula) {
+        cell.formulas = [[replace]];
+      } else if (matchEntireCell) {
+        cell.values = [[replace]];
+      } else {
+        // Partial string replacement within the displayed text
         const regex = new RegExp(escapeRegex(find), matchCase ? "g" : "gi");
-        const result = cell.replace(regex, replace);
-        if (result !== cell) replacements++;
-        return result;
+        const original = typeof rawVal === "string" ? rawVal : displayText;
+        cell.values = [[original.replace(regex, replace)]];
       }
-      return cell;
-    })
-  );
+
+      replacements++;
+    }
+  }
 
   if (replacements > 0) {
-    range.values = newValues;
     await context.sync();
   }
 
@@ -85,6 +135,65 @@ async function handler(
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
+// Excel stores dates as serial numbers (days since 1900-01-00, with Lotus bug).
+// Users search by formatted text (e.g. "19/04/2026") but .values returns a
+// number.  These helpers bridge the gap.
+
+const DATE_PATTERNS = [
+  // dd/mm/yyyy  or  dd-mm-yyyy  or  dd.mm.yyyy
+  /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/,
+  // yyyy-mm-dd  or  yyyy/mm/dd
+  /^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/,
+];
+
+/** Try to parse a user-typed date string into {day, month, year}. */
+function parseDateString(s: string): { day: number; month: number; year: number } | null {
+  // dd/mm/yyyy  dd-mm-yyyy  dd.mm.yyyy
+  let m = s.match(DATE_PATTERNS[0]);
+  if (m) return { day: +m[1], month: +m[2], year: +m[3] };
+  // yyyy-mm-dd  yyyy/mm/dd
+  m = s.match(DATE_PATTERNS[1]);
+  if (m) return { day: +m[3], month: +m[2], year: +m[1] };
+  return null;
+}
+
+/** Convert Excel serial number → JS Date (accounts for Lotus 1-2-3 bug). */
+function excelSerialToDate(serial: number): Date | null {
+  if (serial < 1 || serial > 2958465) return null; // out of range
+  // Excel epoch: serial 1 = Jan 1 1900, so serial 0 = Dec 31 1899 ("Jan 0 1900").
+  // Serial 60 = non-existent Feb 29 1900 (Lotus 1-2-3 bug) — skip it.
+  const adjusted = serial > 60 ? serial - 1 : serial;
+  const ms = Date.UTC(1899, 11, 31) + adjusted * 86400000;
+  return new Date(ms);
+}
+
+/** Convert {day, month, year} → Excel serial number. */
+function dateToExcelSerial(d: { day: number; month: number; year: number }): number {
+  const ms = Date.UTC(d.year, d.month - 1, d.day);
+  const epoch = Date.UTC(1899, 11, 31); // Dec 31 1899 = Excel's "Jan 0 1900"
+  let serial = Math.round((ms - epoch) / 86400000);
+  if (serial >= 60) serial += 1; // account for Lotus 1-2-3 fake Feb 29 1900
+  return serial;
+}
+
+/**
+ * Check if an Excel numeric cell value matches the find date string.
+ * Returns true when the serial date represents the same calendar date.
+ */
+function numericCellMatchesDate(
+  cellValue: number,
+  findDate: { day: number; month: number; year: number }
+): boolean {
+  const d = excelSerialToDate(cellValue);
+  if (!d) return false;
+  return (
+    d.getUTCFullYear() === findDate.year &&
+    d.getUTCMonth() + 1 === findDate.month &&
+    d.getUTCDate() === findDate.day
+  );
 }
 
 registry.register(meta, handler as any);

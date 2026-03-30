@@ -21,7 +21,6 @@ import {
   ExecutionPlan,
   ExecutionState,
   StepResult,
-  StepStatus,
   PlanStep,
   ExecutionOptions,
 } from "./types";

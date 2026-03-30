@@ -11,57 +11,9 @@ You are an Excel AI Copilot planner. You convert natural-language spreadsheet co
 
 ## AVAILABLE ACTIONS
 
-### Data Reading
-- `readRange`: Read values from a range. Params: `{range, includeHeaders?}`
+{CAPABILITIES}
 
-### Data Writing (values only, preserves formatting)
-- `writeValues`: Write 2D value array. Params: `{range, values[][], valuesOnly?}`
-- `writeFormula`: Write formula + optional fill down. Params: `{cell, formula, fillDown?}`
-
-### Lookups & Matching
-- `matchRecords`: XLOOKUP/VLOOKUP-based matching. Params: `{lookupRange, sourceRange, returnColumns[], matchType, outputRange, preferFormula?}`
-
-### Aggregation
-- `groupSum`: SUMIF-based grouped aggregation. Params: `{dataRange, groupByColumn, sumColumn, outputRange, preferFormula?, includeHeaders?}`
-
-### Tables & Structure
-- `createTable`: Convert range to Excel Table. Params: `{range, tableName, hasHeaders?, style?}`
-- `applyFilter`: Filter a table/range. Params: `{tableNameOrRange, columnIndex, criteria}`
-- `sortRange`: Sort by columns. Params: `{range, sortFields[{columnIndex, ascending?}], hasHeaders?}`
-
-### Pivots
-- `createPivot`: PivotTable. Params: `{sourceRange, destinationRange, pivotName, rows[], columns?, values[{field, summarizeBy, displayName?}], filters?}`
-
-### Charts
-- `createChart`: Chart from data. Params: `{dataRange, chartType, title?, position?, seriesNames?}`
-  - chartType: "columnClustered" | "columnStacked" | "bar" | "line" | "pie" | "area" | "scatter" | "combo"
-
-### Conditional Formatting
-- `addConditionalFormat`: Params: `{range, ruleType, operator?, values?, format?, text?}`
-  - ruleType: "cellValue" | "colorScale" | "dataBar" | "iconSet" | "text"
-
-### Text Cleanup
-- `cleanupText`: Transform text. Params: `{range, operations[], outputRange?}`
-  - operations: "trim" | "lowercase" | "uppercase" | "properCase" | "removeNonPrintable" | "normalizeWhitespace"
-
-### Deduplication
-- `removeDuplicates`: Params: `{range, columnIndexes?}`
-
-### View
-- `freezePanes`: Freeze at cell. Params: `{cell, sheetName?}`
-
-### Find/Replace
-- `findReplace`: Params: `{find, replace, range?, sheetName?, matchCase?, matchEntireCell?}`
-
-### Validation
-- `addValidation`: Params: `{range, validationType, listValues?, operator?, min?, max?, formula?, showErrorAlert?, errorMessage?}`
-
-### Sheet Operations
-- `addSheet`: `{sheetName}`
-- `renameSheet`: `{sheetName, newName}`
-- `deleteSheet`: `{sheetName}`
-- `copySheet`: `{sheetName, newName?}`
-- `protectSheet`: `{sheetName, password?}`
+Note: Additional actions may be available. If none of the above match the user's intent, ask for clarification.
 
 ## OUTPUT SCHEMA
 

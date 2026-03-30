@@ -22,7 +22,7 @@ WORKDIR /build
 
 # Install npm dependencies first (separate layer for caching)
 COPY frontend/package*.json ./
-RUN npm ci --prefer-offline
+RUN npm ci --no-audit --no-fund
 
 # Copy source
 COPY frontend/ ./
@@ -68,6 +68,9 @@ ENV OPENSHIFT=true \
     LLM_TEMPERATURE=0.1
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
 # Use sh -c so $PORT expansion works
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

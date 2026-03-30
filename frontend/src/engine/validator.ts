@@ -11,7 +11,7 @@
  * MUST NOT be executed. Warnings are informational.
  */
 
-import { ExecutionPlan, PlanStep, StepAction } from "./types";
+import { ExecutionPlan, PlanStep } from "./types";
 import { registry } from "./capabilityRegistry";
 
 export interface ValidationResult {
@@ -144,6 +144,52 @@ function validateStep(
   validateActionParams(step, errors);
 }
 
+/**
+ * Human-readable descriptions for every required param field.
+ * Shown in validation errors so the user/developer understands what is wrong.
+ */
+const FIELD_DESCRIPTIONS: Record<string, string> = {
+  // Common
+  range:            "the cell range to operate on (e.g. \"Sheet1!A1:C20\" or \"Sheet1!A:A\")",
+  cell:             "the target cell or freeze-point cell (e.g. \"Sheet1!D2\"; for freezePanes \"B2\" freezes row 1 and column A)",
+  formula:          "the Excel formula to write — must start with \"=\"",
+  sheetName:        "the name of the worksheet to operate on",
+
+  // writeValues
+  values:           "a 2D array of cell values to write, e.g. [[\"Name\",\"Age\"],[\"Alice\",30]]",
+
+  // matchRecords
+  lookupRange:      "the range containing the lookup keys (the column you want to match FROM)",
+  sourceRange:      "the data range to search in — for matchRecords: the key column; for createPivot: the full table including headers",
+  returnColumns:    "1-based column offsets within sourceRange to return, e.g. [2] returns the 2nd column",
+  outputRange:      "the destination range where matched/computed results will be written",
+
+  // groupSum
+  dataRange:        "the full data range including both the grouping column and the values column (also used as chart data range)",
+  groupByColumn:    "1-based index of the column to group by (e.g. 1 = first column)",
+  sumColumn:        "1-based index of the column whose values will be summed",
+
+  // createChart
+  chartType:        "the chart type — one of: columnClustered, bar, line, pie, area, scatter",
+
+  // applyFilter
+  tableNameOrRange: "the name of an Excel Table or a range address to apply the filter to",
+  criteria:         "the filter criteria object — must include filterOn (\"values\", \"topItems\", or \"custom\")",
+
+  // addConditionalFormat
+  ruleType:         "the type of rule — one of: cellValue, colorScale, dataBar, iconSet, text",
+
+  // cleanupText
+  operations:       "list of text operations to apply — e.g. [\"trim\", \"uppercase\", \"normalizeWhitespace\"]",
+
+  // findReplace
+  find:             "the text to search for in the sheet",
+  replace:          "the replacement text (use \"\" to delete matches)",
+
+  // addValidation
+  validationType:   "the type of validation — one of: list, wholeNumber, decimal, date, textLength, custom",
+};
+
 function validateActionParams(
   step: PlanStep,
   errors: ValidationIssue[]
@@ -157,13 +203,16 @@ function validateActionParams(
     case "writeValues":
       requireField(step.id, p, "range", errors);
       requireField(step.id, p, "values", errors);
-      if (p.values && !Array.isArray(p.values)) {
-        errors.push({
-          stepId: step.id,
-          field: "values",
-          message: "values must be a 2D array",
-          code: "INVALID_VALUES",
-        });
+      if (p.values !== undefined) {
+        const isFlat = Array.isArray(p.values) && p.values.length > 0 && !Array.isArray((p.values as unknown[])[0]);
+        if (!Array.isArray(p.values) || isFlat) {
+          errors.push({
+            stepId: step.id,
+            field: "values",
+            message: "\"values\" must be a 2D array, e.g. [[\"Alice\", 30], [\"Bob\", 25]]",
+            code: "INVALID_VALUES",
+          });
+        }
       }
       break;
     case "writeFormula":
@@ -173,7 +222,10 @@ function validateActionParams(
     case "matchRecords":
       requireField(step.id, p, "lookupRange", errors);
       requireField(step.id, p, "sourceRange", errors);
-      requireField(step.id, p, "returnColumns", errors);
+      // returnColumns is not required when writeValue is set (composite key mode)
+      if (!p.writeValue) {
+        requireField(step.id, p, "returnColumns", errors);
+      }
       requireField(step.id, p, "outputRange", errors);
       break;
     case "groupSum":
@@ -183,23 +235,20 @@ function validateActionParams(
       requireField(step.id, p, "outputRange", errors);
       break;
     case "createTable":
+      // tableName is optional — handler auto-generates it
       requireField(step.id, p, "range", errors);
-      requireField(step.id, p, "tableName", errors);
       break;
     case "applyFilter":
       requireField(step.id, p, "tableNameOrRange", errors);
       requireField(step.id, p, "criteria", errors);
       break;
     case "sortRange":
+      // sortFields is optional — handler defaults to first column ascending
       requireField(step.id, p, "range", errors);
-      requireField(step.id, p, "sortFields", errors);
       break;
     case "createPivot":
+      // Only sourceRange is truly required — handler auto-detects everything else
       requireField(step.id, p, "sourceRange", errors);
-      requireField(step.id, p, "destinationRange", errors);
-      requireField(step.id, p, "pivotName", errors);
-      requireField(step.id, p, "rows", errors);
-      requireField(step.id, p, "values", errors);
       break;
     case "createChart":
       requireField(step.id, p, "dataRange", errors);
@@ -208,6 +257,14 @@ function validateActionParams(
     case "addConditionalFormat":
       requireField(step.id, p, "range", errors);
       requireField(step.id, p, "ruleType", errors);
+      if (p.ruleType === "formula" && !p.formula && !p.text) {
+        errors.push({
+          stepId: step.id,
+          field: "formula",
+          message: "ruleType=\"formula\" requires a \"formula\" field (e.g. \"=$D2=\\\"\\\"\")",
+          code: "MISSING_FIELD",
+        });
+      }
       break;
     case "cleanupText":
       requireField(step.id, p, "range", errors);
@@ -234,6 +291,37 @@ function validateActionParams(
     case "protectSheet":
       requireField(step.id, p, "sheetName", errors);
       break;
+    case "formatCells":
+      requireField(step.id, p, "range", errors);
+      break;
+    case "clearRange":
+      requireField(step.id, p, "range", errors);
+      break;
+    case "hideShow":
+      requireField(step.id, p, "target", errors);
+      requireField(step.id, p, "rangeOrName", errors);
+      break;
+    case "addComment":
+      requireField(step.id, p, "cell", errors);
+      requireField(step.id, p, "content", errors);
+      break;
+    case "addHyperlink":
+      requireField(step.id, p, "cell", errors);
+      requireField(step.id, p, "url", errors);
+      break;
+    case "groupRows":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "operation", errors);
+      break;
+    case "setRowColSize":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "dimension", errors);
+      requireField(step.id, p, "size", errors);
+      break;
+    case "copyPasteRange":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "destinationRange", errors);
+      break;
     default:
       // Extensible: unknown actions are caught by the registry check above
       break;
@@ -247,10 +335,12 @@ function requireField(
   errors: ValidationIssue[]
 ): void {
   if (params[field] === undefined || params[field] === null) {
+    const description = FIELD_DESCRIPTIONS[field];
+    const detail = description ? ` — ${description}` : "";
     errors.push({
       stepId,
       field,
-      message: `Missing required field: ${field}`,
+      message: `Missing required field "${field}"${detail}`,
       code: "MISSING_FIELD",
     });
   }

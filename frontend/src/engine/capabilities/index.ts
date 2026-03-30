@@ -27,5 +27,13 @@ import "./mergeCells";
 import "./setNumberFormat";
 import "./insertDeleteRows";
 import "./addSparkline";
+import "./formatCells";
+import "./clearRange";
+import "./hideShow";
+import "./addComment";
+import "./addHyperlink";
+import "./groupRows";
+import "./setRowColSize";
+import "./copyPasteRange";
 
 export { registry } from "../capabilityRegistry";

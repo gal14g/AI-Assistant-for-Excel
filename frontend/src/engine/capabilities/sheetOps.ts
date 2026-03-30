@@ -45,6 +45,17 @@ for (const sa of sheetActions) {
     switch (sa.action) {
       case "addSheet": {
         options.onProgress?.(`Adding sheet "${params.sheetName}"...`);
+        // Use getItemOrNullObject so we don't crash if the sheet already exists
+        const existing = context.workbook.worksheets.getItemOrNullObject(params.sheetName);
+        existing.load("isNullObject");
+        await context.sync();
+        if (!existing.isNullObject) {
+          return {
+            stepId: "",
+            status: "success",
+            message: `Sheet "${params.sheetName}" already exists — using it`,
+          };
+        }
         const newSheet = context.workbook.worksheets.add(params.sheetName);
         newSheet.load("name");
         await context.sync();
@@ -57,8 +68,13 @@ for (const sa of sheetActions) {
 
       case "renameSheet": {
         options.onProgress?.(`Renaming "${params.sheetName}" to "${params.newName}"...`);
-        const sheet = context.workbook.worksheets.getItem(params.sheetName);
-        sheet.name = params.newName ?? params.sheetName;
+        const sheetToRename = context.workbook.worksheets.getItemOrNullObject(params.sheetName);
+        sheetToRename.load("isNullObject");
+        await context.sync();
+        if (sheetToRename.isNullObject) {
+          return { stepId: "", status: "error", message: `Sheet "${params.sheetName}" not found` };
+        }
+        sheetToRename.name = params.newName ?? params.sheetName;
         await context.sync();
         return {
           stepId: "",
@@ -69,8 +85,14 @@ for (const sa of sheetActions) {
 
       case "deleteSheet": {
         options.onProgress?.(`Deleting sheet "${params.sheetName}"...`);
-        const sheet = context.workbook.worksheets.getItem(params.sheetName);
-        sheet.delete();
+        const sheetToDelete = context.workbook.worksheets.getItemOrNullObject(params.sheetName);
+        sheetToDelete.load("isNullObject");
+        await context.sync();
+        if (sheetToDelete.isNullObject) {
+          // Already gone — treat as success (idempotent)
+          return { stepId: "", status: "success", message: `Sheet "${params.sheetName}" already deleted` };
+        }
+        sheetToDelete.delete();
         await context.sync();
         return {
           stepId: "",
