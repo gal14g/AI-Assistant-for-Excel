@@ -1,0 +1,68 @@
+# Excel AI Copilot — OpenShift Deployment
+#
+# Apply in order:
+#   oc apply -f openshift/configmap.yaml
+#   oc apply -f openshift/secret.yaml
+#   oc apply -f openshift/deployment.yaml
+#   oc apply -f openshift/service.yaml
+#   oc apply -f openshift/route.yaml
+#
+# Or all at once:
+#   oc apply -f openshift/
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excel-copilot
+  labels:
+    app: excel-copilot
+    app.kubernetes.io/name: excel-copilot
+    app.kubernetes.io/part-of: excel-ai-copilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: excel-copilot
+  template:
+    metadata:
+      labels:
+        app: excel-copilot
+    spec:
+      containers:
+        - name: excel-copilot
+          # Replace with your actual image from GitLab CI:
+          #   $CI_REGISTRY_IMAGE:latest
+          image: registry.gitlab.com/YOUR_GROUP/excel-copilot:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: excel-copilot-config
+            - secretRef:
+                name: excel-copilot-secrets
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+      # OpenShift runs as arbitrary non-root UID — no securityContext override needed.
+      # The Dockerfile already has chmod g+rwX.

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: excel-copilot
+  labels:
+    app: excel-copilot
+spec:
+  selector:
+    app: excel-copilot
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  type: ClusterIP

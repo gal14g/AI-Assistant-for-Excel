@@ -1,0 +1,22 @@
+# Non-secret configuration — safe to store in git.
+# Edit values before applying to your cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: excel-copilot-config
+  labels:
+    app: excel-copilot
+data:
+  OPENSHIFT: "true"
+  SERVE_STATIC: "true"
+  STATIC_DIR: "./static"
+  PORT: "8080"
+  DEBUG: "false"
+  LLM_MAX_TOKENS: "4096"
+  LLM_TEMPERATURE: "0.1"
+  LLM_JSON_MODE: "false"
+  # Set to your LLM provider model string:
+  LLM_MODEL: "command-r-plus"
+  # Set if using Ollama / proxy / Azure:
+  LLM_BASE_URL: ""
+  LLM_API_VERSION: ""

@@ -1,0 +1,21 @@
+# TLS edge termination — OpenShift handles HTTPS at the Route,
+# the app receives plain HTTP on port 8080.
+# Replace the host with your actual cluster domain.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: excel-copilot
+  labels:
+    app: excel-copilot
+spec:
+  # Replace with your actual cluster wildcard domain:
+  # host: excel-copilot.apps.your-cluster.example.com
+  to:
+    kind: Service
+    name: excel-copilot
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
