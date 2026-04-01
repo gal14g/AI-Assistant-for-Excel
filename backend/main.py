@@ -13,35 +13,68 @@ Deployment modes (controlled via environment variables):
   SERVE_STATIC=true          — serve static files regardless of OPENSHIFT flag
 """
 
+import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.routers import plan, chat, feedback
 from app.routers import analyze
 
+logger = logging.getLogger(__name__)
+
+# ── Rate limiter ─────────────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="Excel AI Copilot API",
     description="Backend for the Excel AI Copilot add-in. Provides LLM-powered plan generation and validation.",
-    version="1.0.0",
+    version="1.1.0",
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
 )
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
-# In OpenShift the frontend is served from the same origin as the API, so CORS
-# is not strictly needed for same-origin requests. We still open it up for any
-# external tooling (e.g. local dev hitting the deployed API, Office.js frame).
-cors_origins = ["*"] if settings.openshift else settings.cors_origins
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+# ── Security headers middleware ──────────────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if settings.openshift:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' https://appsforoffice.microsoft.com; "
+                "style-src 'self' 'unsafe-inline'; "
+                "connect-src 'self'"
+            )
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+# Always use explicit origins — never wildcard in production.
+# In OpenShift the frontend is served from the same origin, but Office.js
+# iframes may require CORS, so use the configured origins list.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
-    # allow_credentials=True is invalid with allow_origins=["*"] (browser rejects it).
-    # In OpenShift mode the frontend is same-origin so credentials aren't needed.
-    allow_credentials=False if settings.openshift else True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "X-API-Key", "Authorization"],
 )
 
 # ── API routers ───────────────────────────────────────────────────────────────
@@ -67,7 +100,7 @@ async def startup_event():
 async def health():
     return {
         "status": "ok",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "mode": "openshift" if settings.openshift else "local",
     }
 

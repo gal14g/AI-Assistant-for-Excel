@@ -9,19 +9,12 @@ interface Props {
   onSelect: (prompt: string) => void;
 }
 
-const PROMPTS = [
-  "Analyze the data in my selection and summarize key insights",
-  "Create a chart from my selected data",
-  "Format my data as a table",
-  "Create a pivot table from my selection",
-  "Clean up and remove duplicates",
-  "Sort by the first column",
-  "Highlight cells with values above average",
-  "Match values between two sheets using column A",
+const PROMPTS: string[] = [
+  // Add your own suggested prompts here
 ];
 
-export const SuggestedPrompts: React.FC<Props> = ({ onSelect }) => (
-  <div style={{ padding: "8px 12px 12px" }}>
+export const SuggestedPrompts: React.FC<Props> = React.memo(({ onSelect }) => (
+  <div dir="auto" style={{ padding: "8px 12px 12px" }}>
     <div style={{ fontSize: 11, color: "#616161", marginBottom: 8, fontWeight: 500 }}>
       Try asking
     </div>
@@ -56,4 +49,4 @@ export const SuggestedPrompts: React.FC<Props> = ({ onSelect }) => (
       ))}
     </div>
   </div>
-);
+));

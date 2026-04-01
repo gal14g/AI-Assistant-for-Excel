@@ -4,12 +4,14 @@ metadata:
   name: excel-copilot
   labels:
     app: excel-copilot
+    app.kubernetes.io/name: excel-copilot
+    app.kubernetes.io/part-of: excel-ai-copilot
 spec:
   selector:
     app: excel-copilot
   ports:
     - port: 8080
-      targetPort: 8080
+      targetPort: http
       protocol: TCP
       name: http
   type: ClusterIP

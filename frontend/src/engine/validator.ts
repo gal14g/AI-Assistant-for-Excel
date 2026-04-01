@@ -322,6 +322,61 @@ function validateActionParams(
       requireField(step.id, p, "sourceRange", errors);
       requireField(step.id, p, "destinationRange", errors);
       break;
+    case "pageLayout":
+      if (
+        p.margins === undefined &&
+        p.orientation === undefined &&
+        p.paperSize === undefined &&
+        p.printArea === undefined &&
+        p.showGridlines === undefined &&
+        p.printGridlines === undefined
+      ) {
+        errors.push({
+          stepId: step.id,
+          message: "pageLayout requires at least one of: margins, orientation, paperSize, printArea, showGridlines, printGridlines",
+          code: "MISSING_FIELD",
+        });
+      }
+      break;
+    case "insertPicture":
+      requireField(step.id, p, "imageBase64", errors);
+      break;
+    case "insertShape":
+      requireField(step.id, p, "shapeType", errors);
+      requireField(step.id, p, "left", errors);
+      requireField(step.id, p, "top", errors);
+      requireField(step.id, p, "width", errors);
+      requireField(step.id, p, "height", errors);
+      break;
+    case "insertTextBox":
+      requireField(step.id, p, "text", errors);
+      requireField(step.id, p, "left", errors);
+      requireField(step.id, p, "top", errors);
+      requireField(step.id, p, "width", errors);
+      requireField(step.id, p, "height", errors);
+      break;
+    case "addSlicer":
+      requireField(step.id, p, "sourceName", errors);
+      requireField(step.id, p, "sourceField", errors);
+      break;
+    case "addSparkline":
+      requireField(step.id, p, "dataRange", errors);
+      requireField(step.id, p, "locationRange", errors);
+      break;
+    case "autoFitColumns":
+      // range is optional — handler defaults to used range
+      break;
+    case "insertDeleteRows":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "shiftDirection", errors);
+      break;
+    case "mergeCells":
+      requireField(step.id, p, "range", errors);
+      break;
+    case "setNumberFormat":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "format", errors);
+      break;
     default:
       // Extensible: unknown actions are caught by the registry check above
       break;

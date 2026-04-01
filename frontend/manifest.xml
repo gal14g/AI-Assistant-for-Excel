@@ -21,8 +21,6 @@
   <Description DefaultValue="Natural-language spreadsheet assistant powered by AI" />
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-80.png" />
-  <SupportUrl DefaultValue="https://github.com/your-org/excel-ai-copilot" />
-
   <Hosts>
     <Host Name="Workbook" />
   </Hosts>
@@ -78,22 +76,6 @@
                   </Action>
                 </Control>
 
-                <!-- Undo last run button -->
-                <Control xsi:type="Button" id="UndoLastRun">
-                  <Label resid="UndoLabel" />
-                  <Supertip>
-                    <Title resid="UndoLabel" />
-                    <Description resid="UndoDesc" />
-                  </Supertip>
-                  <Icon>
-                    <bt:Image size="16" resid="Icon.16x16" />
-                    <bt:Image size="32" resid="Icon.32x32" />
-                    <bt:Image size="80" resid="Icon.80x80" />
-                  </Icon>
-                  <Action xsi:type="ExecuteFunction">
-                    <FunctionName>undoLastRun</FunctionName>
-                  </Action>
-                </Control>
               </Group>
               <Label resid="TabLabel" />
             </CustomTab>
@@ -118,11 +100,9 @@
         <bt:String id="TabLabel" DefaultValue="AI Copilot" />
         <bt:String id="GroupLabel" DefaultValue="AI Assistant" />
         <bt:String id="ToggleTaskpaneLabel" DefaultValue="Open Copilot" />
-        <bt:String id="UndoLabel" DefaultValue="Undo Last Run" />
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="ToggleTaskpaneDesc" DefaultValue="Open the AI Copilot chat panel to issue spreadsheet commands in natural language." />
-        <bt:String id="UndoDesc" DefaultValue="Undo the most recent AI Copilot execution and restore the previous state." />
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

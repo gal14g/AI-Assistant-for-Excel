@@ -8,37 +8,42 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from ..db import log_choice, get_interaction
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api", tags=["feedback"])
 
 
 class FeedbackRequest(BaseModel):
-    interactionId: str
-    chosenPlanId: Optional[str] = None   # null = dismissed all options
+    interactionId: str = Field(..., max_length=100)
+    chosenPlanId: Optional[str] = Field(None, max_length=100)
     action: Literal["applied", "dismissed"]
 
 
 @router.post("/feedback")
-async def record_feedback(request: FeedbackRequest):
+@limiter.limit("30/minute")
+async def record_feedback(request: Request, body: FeedbackRequest):
     await log_choice(
-        interaction_id=request.interactionId,
-        chosen_plan_id=request.chosenPlanId,
-        action=request.action,
+        interaction_id=body.interactionId,
+        chosen_plan_id=body.chosenPlanId,
+        action=body.action,
     )
 
     # Promote applied interactions into the few-shot example pool
-    if request.action == "applied":
+    if body.action == "applied":
         try:
-            interaction = await get_interaction(request.interactionId)
+            interaction = await get_interaction(body.interactionId)
             if interaction and interaction.get("plans_json"):
                 from ..services.example_store import add_user_example
 
                 await add_user_example(
-                    interaction_id=request.interactionId,
+                    interaction_id=body.interactionId,
                     user_message=interaction["user_message"],
                     assistant_response=interaction["plans_json"],
                 )

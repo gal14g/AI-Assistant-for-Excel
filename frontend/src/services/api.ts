@@ -13,6 +13,8 @@ export interface ChatRequest {
   rangeTokens?: { address: string; sheetName: string }[];
   activeSheet?: string;
   workbookName?: string;
+  usedRangeEnd?: string;   // e.g. "C15" — last used cell on the active sheet
+  locale?: string;         // e.g. "he-IL" — user's locale for date/number formatting
   conversationHistory?: { role: string; content: string }[];
 }
 
@@ -140,4 +142,60 @@ export async function sendFeedback(
   } catch {
     // Fire-and-forget: feedback logging should never disrupt UX
   }
+}
+
+// ── Presets ──────────────────────────────────────────────────────────────────
+// ── Presets (stored in browser localStorage — per-user, no server) ───────────
+
+export interface Preset {
+  id: string;
+  name: string;
+  userMessage: string;
+  assistantResponse?: string;
+  createdAt: string;
+}
+
+const PRESETS_KEY = "excel_copilot_presets";
+
+function readPresetsFromStorage(): Preset[] {
+  try {
+    const raw = localStorage.getItem(PRESETS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePresetsToStorage(presets: Preset[]): void {
+  localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
+}
+
+export async function listPresets(): Promise<Preset[]> {
+  return readPresetsFromStorage();
+}
+
+export async function getPreset(id: string): Promise<Preset | null> {
+  return readPresetsFromStorage().find((p) => p.id === id) ?? null;
+}
+
+export async function savePreset(name: string, userMessage: string, assistantResponse: string): Promise<{ id: string }> {
+  const presets = readPresetsFromStorage();
+  const id = crypto.randomUUID?.() ?? `preset_${Date.now()}`;
+  presets.unshift({ id, name, userMessage, assistantResponse, createdAt: new Date().toISOString() });
+  writePresetsToStorage(presets);
+  return { id };
+}
+
+export async function renamePreset(id: string, name: string): Promise<void> {
+  const presets = readPresetsFromStorage();
+  const preset = presets.find((p) => p.id === id);
+  if (preset) {
+    preset.name = name;
+    writePresetsToStorage(presets);
+  }
+}
+
+export async function deletePreset(id: string): Promise<void> {
+  const presets = readPresetsFromStorage().filter((p) => p.id !== id);
+  writePresetsToStorage(presets);
 }

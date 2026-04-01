@@ -54,18 +54,33 @@ async function handler(
     const fillRange = range.getResizedRange(fillDown - 1, 0);
     range.autoFill(fillRange, Excel.AutoFillType.fillDefault);
     await context.sync();
+  }
 
+  // Check for formula errors after writing (#SPILL!, #REF!, #VALUE!, #NAME?, etc.)
+  const checkRange = fillDown && fillDown > 1
+    ? range.getResizedRange(Math.min(fillDown - 1, 5), 0) // check first few rows
+    : range;
+  checkRange.load("values");
+  await context.sync();
+
+  const errorTypes = ["#SPILL!", "#REF!", "#VALUE!", "#NAME?", "#NULL!", "#N/A", "#DIV/0!", "#CALC!"];
+  const firstVal = String(checkRange.values?.[0]?.[0] ?? "");
+  const hasError = errorTypes.some((e) => firstVal.includes(e));
+
+  const rowInfo = fillDown && fillDown > 1 ? ` and filled down ${fillDown} rows` : "";
+  if (hasError) {
     return {
       stepId: "",
-      status: "success",
-      message: `Wrote formula to ${cell} and filled down ${fillDown} rows`,
+      status: "error",
+      message: `Formula wrote to ${cell}${rowInfo} but produced ${firstVal}. The formula may need to be corrected.`,
+      error: `Formula error: ${firstVal}`,
     };
   }
 
   return {
     stepId: "",
     status: "success",
-    message: `Wrote formula ${formula} to ${cell}`,
+    message: `Wrote formula to ${cell}${rowInfo}`,
   };
 }
 

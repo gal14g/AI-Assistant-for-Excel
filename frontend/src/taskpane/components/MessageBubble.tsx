@@ -75,7 +75,7 @@ const CopilotIcon = () => (
   </svg>
 );
 
-export const MessageBubble: React.FC<Props> = ({ message }) => {
+export const MessageBubble: React.FC<Props> = React.memo(({ message }) => {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
 
@@ -97,10 +97,11 @@ export const MessageBubble: React.FC<Props> = ({ message }) => {
         borderRadius: isUser ? "18px 18px 4px 18px" : "4px 18px 18px 18px",
         backgroundColor: isUser ? "#0f6cbd" : "#ffffff",
         color: isUser ? "#ffffff" : "#242424",
-        border: isUser ? "none" : "1px solid #e8e8e8",
+        border: isUser ? "none" : "1px solid #eaeaea",
         fontSize: 13,
         lineHeight: 1.6,
-        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        boxShadow: isUser ? "0 2px 8px rgba(15,108,189,0.2)" : "0 1px 6px rgba(0,0,0,0.05)",
+        transition: "box-shadow 0.2s ease",
       }}>
         {!isUser && (
           <div style={{ fontSize: 11, fontWeight: 600, color: "#5b5fc7", marginBottom: 6, letterSpacing: 0.3 }}>
@@ -148,4 +149,4 @@ export const MessageBubble: React.FC<Props> = ({ message }) => {
       )}
     </div>
   );
-};
+});

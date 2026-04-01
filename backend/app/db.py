@@ -77,9 +77,18 @@ async def init_db() -> None:
             interaction_id      TEXT,
             quality_score       REAL DEFAULT 1.0
         );
+
     """)
     await _db.commit()
     logger.info("Feedback database ready at %s", db_path)
+
+
+async def _get_db() -> aiosqlite.Connection:
+    """Return the active DB connection or raise if not initialised."""
+    if _db is None:
+        msg = "Database not initialised – call init_db() first"
+        raise RuntimeError(msg)
+    return _db
 
 
 async def close_db() -> None:
@@ -227,3 +236,5 @@ async def get_interaction(interaction_id: str) -> dict | None:
     if not row:
         return None
     return {"id": row[0], "user_message": row[1], "plans_json": row[2]}
+
+

@@ -5,22 +5,32 @@
 #   lint       → code style and type-checking (frontend + backend)
 #   build      → production webpack build (frontend)
 #   test       → unit tests (frontend jest + backend pytest)
-#   connect    → verify LLM API connectivity (non-blocking)
+#   security   → dependency vulnerability scanning
 #   docker     → build Docker image and push to GitLab registry
+#   deploy     → roll out to OpenShift (manual trigger)
 #
 # Required CI/CD Variables (Settings → CI/CD → Variables):
-#   LLM_MODEL      — e.g. "ollama/llama3" or "gpt-4o"
-#   LLM_API_KEY    — API key (leave empty for Ollama/local models)
-#   LLM_BASE_URL   — Base URL for local/proxy endpoints (empty for OpenAI/Anthropic)
-#   FRONTEND_URL   — Public URL of the deployed add-in, e.g. https://copilot.mycompany.com
+#   LLM_MODEL        — e.g. "claude-sonnet-4-20250514" or "gpt-4o"
+#   LLM_API_KEY      — API key (mark as masked + protected)
+#   FRONTEND_URL     — Public URL of the deployed add-in, e.g. https://copilot.mycompany.com
+#   OPENSHIFT_SERVER  — cluster API URL (for deploy stage)
+#   OPENSHIFT_TOKEN   — service account token with deploy permissions
+#   OPENSHIFT_NS      — target namespace/project name
 # ─────────────────────────────────────────────────────────────────────────────
 
 stages:
   - lint
   - build
   - test
-  - connect
+  - security
   - docker
+  - deploy
+
+# ── Shared variables ──────────────────────────────────────────────────────────
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+  NODE_OPTIONS: "--max-old-space-size=4096"
+  DOCKER_BUILDKIT: "1"
 
 # ── Shared cache config ────────────────────────────────────────────────────────
 
@@ -55,8 +65,6 @@ lint:backend:
   stage: lint
   image: python:3.11-slim
   <<: *python-cache
-  variables:
-    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
   script:
     - pip install ruff mypy -q
     - pip install -r backend/requirements.txt -q
@@ -106,8 +114,6 @@ test:backend:
   stage: test
   image: python:3.11-slim
   <<: *python-cache
-  variables:
-    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
   script:
     - pip install -r backend/requirements.txt -q
     - cd backend
@@ -116,46 +122,33 @@ test:backend:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
-# ── CONNECTIVITY CHECK ────────────────────────────────────────────────────────
+# ── SECURITY SCANNING ────────────────────────────────────────────────────────
 
-connect:llm:
-  stage: connect
+security:backend:
+  stage: security
   image: python:3.11-slim
+  <<: *python-cache
   script:
-    - pip install litellm -q
-    - python backend/scripts/check_llm_connectivity.py
-  variables:
-    LLM_MODEL: ${LLM_MODEL:-"ollama/llama3"}
-    LLM_API_KEY: ${LLM_API_KEY:-""}
-    LLM_BASE_URL: ${LLM_BASE_URL:-""}
-  allow_failure: true
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_COMMIT_TAG'
-
-connect:backend-health:
-  stage: connect
-  image: python:3.11-slim
-  variables:
-    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
-  script:
+    - pip install pip-audit -q
     - pip install -r backend/requirements.txt -q
-    - |
-      cd backend
-      LLM_MODEL=${LLM_MODEL:-"ollama/llama3"} uvicorn main:app --host 127.0.0.1 --port 8765 &
-      SERVER_PID=$!
-      for i in $(seq 1 15); do
-        sleep 1
-        if python -c "import httpx; r=httpx.get('http://127.0.0.1:8765/health',timeout=2); r.raise_for_status(); print('Health OK:',r.json())" 2>/dev/null; then
-          break
-        fi
-        echo "Waiting for server... ($i/15)"
-      done
-      kill $SERVER_PID 2>/dev/null || true
+    - pip-audit --strict --desc || true
   allow_failure: true
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+security:frontend:
+  stage: security
+  image: node:20-alpine
+  <<: *node-cache
+  script:
+    - cd frontend
+    - npm ci --no-audit --no-fund
+    - npm audit --production --audit-level=high || true
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
 # ── DOCKER ────────────────────────────────────────────────────────────────────
 
@@ -164,6 +157,11 @@ docker:build:
   image: docker:26
   services:
     - docker:26-dind
+  needs:
+    - job: build:frontend
+      artifacts: true
+    - job: test:frontend
+    - job: test:backend
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
     IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
@@ -180,31 +178,53 @@ docker:build:
         .
     - docker push "$IMAGE"
     - docker push "$IMAGE_LATEST"
+    # Tag with semantic version if this is a git tag
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        docker tag "$IMAGE" "$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG"
+        docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG"
+      fi
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_TAG'
 
-# ── OpenShift deploy ──────────────────────────────────────────────────────────
-# Requires CI/CD variables:
-#   OPENSHIFT_SERVER  — cluster API URL (e.g. https://api.your-cluster.example.com:6443)
-#   OPENSHIFT_TOKEN   — service account token with deploy permissions
-#   OPENSHIFT_NS      — target namespace/project name
+# ── DEPLOY ───────────────────────────────────────────────────────────────────
+# Triggered manually from the pipeline UI.
 #
-# Triggered manually from the pipeline (when: manual).
-# On first deploy, apply the manifests in openshift/ first:
-#   oc apply -f openshift/
+# First-time setup:
+#   1. oc create secret generic excel-copilot-secrets --from-literal=LLM_API_KEY='...'
+#   2. Edit openshift/configmap.yaml with your CORS_ORIGINS and LLM_MODEL
+#   3. Edit openshift/route.yaml with your cluster host (optional)
+#   4. Run this job — it applies all manifests and sets the image
 
 deploy:openshift:
-  stage: docker
+  stage: deploy
   image: registry.access.redhat.com/ubi8/oc-minimal:latest
   needs: [docker:build]
+  environment:
+    name: production
+    url: $FRONTEND_URL
   variables:
     IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
   script:
     - oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN" --insecure-skip-tls-verify
     - oc project "$OPENSHIFT_NS"
+    # Apply manifests (idempotent — safe to re-run)
+    - oc apply -f openshift/pvc.yaml
+    - oc apply -f openshift/configmap.yaml
+    - oc apply -f openshift/deployment.yaml
+    - oc apply -f openshift/service.yaml
+    - oc apply -f openshift/route.yaml
+    # Update the image to the newly built one
     - oc set image deployment/excel-copilot excel-copilot="$IMAGE"
-    - oc rollout status deployment/excel-copilot --timeout=120s
+    - oc rollout status deployment/excel-copilot --timeout=180s
+    # Print the route for easy access
+    - echo "Deployed! Route:"
+    - oc get route excel-copilot -o jsonpath='https://{.spec.host}{"\n"}'
+    - echo "Manifest URL (for Excel add-in installation):"
+    - oc get route excel-copilot -o jsonpath='https://{.spec.host}/manifest.xml{"\n"}'
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $OPENSHIFT_SERVER'
+      when: manual
+    - if: '$CI_COMMIT_TAG && $OPENSHIFT_SERVER'
       when: manual

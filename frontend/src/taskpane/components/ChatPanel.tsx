@@ -12,7 +12,7 @@ import { SuggestedPrompts } from "./SuggestedPrompts";
 import { useChat } from "../hooks/useChat";
 import { useSelectionTracker } from "../hooks/useSelectionTracker";
 import { usePlanExecution } from "../hooks/usePlanExecution";
-import { sendFeedback } from "../../services/api";
+import { sendFeedback, listPresets, savePreset, deletePreset, renamePreset, Preset } from "../../services/api";
 
 // Copilot logo SVG
 const CopilotLogo = () => (
@@ -37,6 +37,14 @@ export const ChatPanel: React.FC = () => {
 
   // Track the last executed plan ID so undo works after execution completes
   const [lastExecutedPlanId, setLastExecutedPlanId] = useState<string | null>(null);
+  const [presets, setPresets] = useState<Preset[]>([]);
+  // When undo is triggered, prefill the input with the rolled-back user message.
+  // The counter ensures repeated undos of the same text still trigger the effect.
+  const [undoPrefill, setUndoPrefill] = useState<{ text: string; seq: number }>({ text: "", seq: 0 });
+  // Save-preset naming mode
+  const [savePresetMode, setSavePresetMode] = useState(false);
+  const [savePresetName, setSavePresetName] = useState("");
+  const [saveToast, setSaveToast] = useState("");
   // Track which option tab is active — reset when options change
   const optionsKey = chat.currentOptions?.map((o) => o.plan.planId).join(",") ?? "";
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
@@ -82,6 +90,11 @@ export const ChatPanel: React.FC = () => {
     if (planId) {
       await execution.undoLast(planId);
     }
+    // Remove the last user+assistant exchange and prefill the input with the rolled-back message
+    const removedText = chat.removeLastExchange();
+    if (removedText) {
+      setUndoPrefill((prev) => ({ text: removedText, seq: prev.seq + 1 }));
+    }
   };
 
   const handleCancel = () => {
@@ -99,20 +112,83 @@ export const ChatPanel: React.FC = () => {
     await chat.sendMessage(text, rangeTokens);
   }, [chat]);
 
+  // Load presets on mount
+  useEffect(() => {
+    listPresets().then(setPresets);
+  }, []);
+
+  const handleSavePresetClick = useCallback(() => {
+    // Check there's a plan to save before entering naming mode
+    const lastPlanMsg = [...chat.messages].reverse().find(m => m.role === "assistant" && m.plan);
+    if (!lastPlanMsg) return;
+    setSavePresetName("");
+    setSavePresetMode(true);
+  }, [chat.messages]);
+
+  const handleSavePresetConfirm = useCallback(() => {
+    const name = savePresetName.trim();
+    if (!name) return;
+
+    const lastPlanMsg = [...chat.messages].reverse().find(m => m.role === "assistant" && m.plan);
+    if (!lastPlanMsg) return;
+
+    const msgIndex = chat.messages.indexOf(lastPlanMsg);
+    const userMsg = chat.messages.slice(0, msgIndex).reverse().find(m => m.role === "user");
+
+    savePreset(
+      name,
+      userMsg?.content ?? "",
+      JSON.stringify({ responseType: "plan", message: lastPlanMsg.content, plan: lastPlanMsg.plan })
+    ).then(() => {
+      listPresets().then(setPresets);
+      setSavePresetMode(false);
+      setSaveToast(`Preset "${name}" saved!`);
+      setTimeout(() => setSaveToast(""), 2500);
+    }).catch((err) => console.error("Failed to save preset:", err));
+  }, [savePresetName, chat.messages]);
+
+  const handleDeletePreset = useCallback((presetId: string) => {
+    deletePreset(presetId).then(() => listPresets().then(setPresets));
+  }, []);
+
+  const handleRenamePreset = useCallback((presetId: string, newName: string) => {
+    renamePreset(presetId, newName).then(() => listPresets().then(setPresets));
+  }, []);
+
   const handleSuggestedPrompt = (prompt: string) => {
     handleSend(prompt, []);
   };
 
   return (
-    <div style={{
+    <div dir="auto" style={{
       display: "flex", flexDirection: "column", height: "100vh",
-      backgroundColor: "#f5f5f5",
+      backgroundColor: "#fafafa",
       fontFamily: '"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif',
     }}>
+      {/* Global animations */}
+      <style>{`
+        @keyframes bounce {
+          0%, 80%, 100% { transform: translateY(0); }
+          40% { transform: translateY(-4px); }
+        }
+        @keyframes fadeSlideIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        .chat-message-enter { animation: fadeSlideIn 0.25s ease-out; }
+        .chat-scroll::-webkit-scrollbar { width: 4px; }
+        .chat-scroll::-webkit-scrollbar-thumb { background: #d1d1d1; border-radius: 4px; }
+        .chat-scroll::-webkit-scrollbar-thumb:hover { background: #a1a1a1; }
+        .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+      `}</style>
       {/* Header */}
       <div style={{
-        padding: "10px 16px",
-        backgroundColor: "#ffffff",
+        padding: "12px 16px",
+        background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
         borderBottom: "1px solid #e8e8e8",
         display: "flex", justifyContent: "space-between", alignItems: "center",
         flexShrink: 0,
@@ -137,9 +213,11 @@ export const ChatPanel: React.FC = () => {
       </div>
 
       {/* Messages area */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 12px 0" }}>
+      <div className="chat-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 12px 0", scrollBehavior: "smooth" }}>
         {chat.messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+          <div key={msg.id} className="chat-message-enter">
+            <MessageBubble message={msg} />
+          </div>
         ))}
 
         {/* Streaming text */}
@@ -203,7 +281,7 @@ export const ChatPanel: React.FC = () => {
 
         {/* Error */}
         {(execution.lastError || chat.error) && (
-          <div style={{
+          <div dir="auto" style={{
             padding: "10px 14px", backgroundColor: "#fdf3f3",
             borderRadius: 8, border: "1px solid #fcd6d6",
             color: "#c50f1f", fontSize: 12, marginBottom: 16,
@@ -220,7 +298,7 @@ export const ChatPanel: React.FC = () => {
         <SuggestedPrompts onSelect={handleSuggestedPrompt} />
       )}
 
-      {/* Thinking indicator with stop button */}
+      {/* Thinking indicator (stop button is now in the input toolbar) */}
       {chat.isLoading && (
         <div style={{
           padding: "6px 16px", display: "flex", alignItems: "center", gap: 8,
@@ -236,30 +314,77 @@ export const ChatPanel: React.FC = () => {
             ))}
           </div>
           Copilot is thinking…
-          <button
-            onClick={chat.stopMessage}
+        </div>
+      )}
+
+      {/* Save preset naming bar */}
+      {savePresetMode && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "8px 12px", borderTop: "1px solid #e8e8e8", backgroundColor: "#f8f9ff",
+        }}>
+          <input
+            autoFocus
+            value={savePresetName}
+            onChange={(e) => setSavePresetName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSavePresetConfirm();
+              if (e.key === "Escape") setSavePresetMode(false);
+            }}
+            placeholder="Preset name..."
             style={{
-              marginLeft: "auto",
-              padding: "2px 10px",
-              border: "1px solid #d1d1d1",
-              borderRadius: 4,
-              backgroundColor: "#fff",
-              color: "#c50f1f",
-              fontSize: 11,
-              fontWeight: 600,
-              cursor: "pointer",
+              flex: 1, fontSize: 12, padding: "4px 8px",
+              border: "1px solid #d1d1d1", borderRadius: 4, outline: "none",
+            }}
+          />
+          <button
+            onClick={handleSavePresetConfirm}
+            disabled={!savePresetName.trim()}
+            style={{
+              fontSize: 11, padding: "4px 10px", borderRadius: 4, border: "none",
+              backgroundColor: savePresetName.trim() ? "#0f6cbd" : "#c8c6c4",
+              color: "#fff", fontWeight: 600, cursor: savePresetName.trim() ? "pointer" : "default",
             }}
           >
-            Stop
+            Save
           </button>
+          <button
+            onClick={() => setSavePresetMode(false)}
+            style={{
+              fontSize: 11, padding: "4px 8px", borderRadius: 4,
+              border: "1px solid #d1d1d1", backgroundColor: "#fff", cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Save toast */}
+      {saveToast && (
+        <div style={{
+          padding: "6px 12px", backgroundColor: "#dff6dd", color: "#107c10",
+          fontSize: 12, fontWeight: 500, textAlign: "center",
+          animation: "fadeIn 0.2s ease-out",
+        }}>
+          {saveToast}
         </div>
       )}
 
       {/* Chat input */}
       <ChatInput
         onSend={handleSend}
-        disabled={chat.isLoading || execution.isExecuting}
+        onStop={chat.stopMessage}
+        onUndo={lastExecutedPlanId ? handleUndo : undefined}
+        onSavePreset={handleSavePresetClick}
+        onDeletePreset={handleDeletePreset}
+        onRenamePreset={handleRenamePreset}
+        disabled={execution.isExecuting}
+        isLoading={chat.isLoading}
+        canUndo={!!lastExecutedPlanId}
+        presets={presets}
         currentSelectionAddress={selection.currentSelectionAddress}
+        prefillText={undoPrefill}
       />
     </div>
   );

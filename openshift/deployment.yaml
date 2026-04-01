@@ -1,14 +1,15 @@
 # Excel AI Copilot — OpenShift Deployment
 #
-# Apply in order:
+# Quick deploy (all manifests at once):
+#   oc apply -f openshift/
+#
+# Or step by step:
+#   oc apply -f openshift/pvc.yaml
+#   oc create secret generic excel-copilot-secrets --from-literal=LLM_API_KEY='your-key'
 #   oc apply -f openshift/configmap.yaml
-#   oc apply -f openshift/secret.yaml
 #   oc apply -f openshift/deployment.yaml
 #   oc apply -f openshift/service.yaml
 #   oc apply -f openshift/route.yaml
-#
-# Or all at once:
-#   oc apply -f openshift/
 
 apiVersion: apps/v1
 kind: Deployment
@@ -18,8 +19,15 @@ metadata:
     app: excel-copilot
     app.kubernetes.io/name: excel-copilot
     app.kubernetes.io/part-of: excel-ai-copilot
+    app.kubernetes.io/version: "1.1.0"
+    app.kubernetes.io/component: backend
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: excel-copilot
@@ -27,15 +35,19 @@ spec:
     metadata:
       labels:
         app: excel-copilot
+        app.kubernetes.io/name: excel-copilot
     spec:
+      terminationGracePeriodSeconds: 30
       containers:
         - name: excel-copilot
           # Replace with your actual image from GitLab CI:
-          #   $CI_REGISTRY_IMAGE:latest
+          #   $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
           image: registry.gitlab.com/YOUR_GROUP/excel-copilot:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
               protocol: TCP
+              name: http
           envFrom:
             - configMapRef:
                 name: excel-copilot-config
@@ -43,26 +55,40 @@ spec:
                 name: excel-copilot-secrets
           resources:
             requests:
-              cpu: 200m
-              memory: 256Mi
-            limits:
-              cpu: "1"
+              cpu: 250m
               memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
           livenessProbe:
             httpGet:
               path: /health
-              port: 8080
-            initialDelaySeconds: 10
+              port: http
+            initialDelaySeconds: 20
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /ready
-              port: 8080
-            initialDelaySeconds: 5
+              port: http
+            initialDelaySeconds: 15
             periodSeconds: 10
-            timeoutSeconds: 3
+            timeoutSeconds: 5
             failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: excel-copilot-data
       # OpenShift runs as arbitrary non-root UID — no securityContext override needed.
       # The Dockerfile already has chmod g+rwX.

@@ -40,10 +40,17 @@ async function handler(
 
   options.onProgress?.(`Writing ${values.length} rows to ${address}...`);
 
-  const range = resolveRange(context, address);
+  // Resolve the range, then resize to match the actual values dimensions.
+  // The LLM sometimes gets the range size wrong (e.g. C31:C400 for 366 rows).
+  // We take just the top-left cell of the given range and resize from there.
+  const fullRange = resolveRange(context, address);
+  const topLeft = fullRange.getCell(0, 0);
+  const rows = values.length;
+  const cols = values[0]?.length ?? 1;
+  const target = topLeft.getResizedRange(rows - 1, cols - 1);
 
   // Only set values — never touch formatting
-  range.values = values;
+  target.values = values;
 
   await context.sync();
 

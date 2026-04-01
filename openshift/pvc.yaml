@@ -1,0 +1,19 @@
+# Persistent storage for ChromaDB vectors, SQLite feedback DB, and embeddings cache.
+# Without this, all data is lost on pod restart.
+#
+# First-startup embedding model download is ~80MB. 1Gi is sufficient for
+# embeddings + feedback DB + ChromaDB vectors for typical usage.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: excel-copilot-data
+  labels:
+    app: excel-copilot
+    app.kubernetes.io/name: excel-copilot
+    app.kubernetes.io/part-of: excel-ai-copilot
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi

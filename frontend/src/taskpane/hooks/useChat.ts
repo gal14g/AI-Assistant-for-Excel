@@ -24,6 +24,8 @@ interface ChatActions {
   sendMessage: (text: string, rangeTokens?: { address: string; sheetName: string }[]) => Promise<void>;
   stopMessage: () => void;
   clearHistory: () => void;
+  /** Remove the last user + assistant message pair (used by undo). Returns the user message text. */
+  removeLastExchange: () => string;
   setCurrentPlan: (plan: ExecutionPlan | null) => void;
   setCurrentOptions: (options: PlanOption[] | null) => void;
   dismissError: () => void;
@@ -72,17 +74,26 @@ export function useChat(): ChatState & ChatActions {
           .slice(-10)
           .map((m) => ({ role: m.role, content: m.content }));
 
-        // Get active sheet + workbook name from Excel context
-        let activeSheet = "";   // empty = unknown; backend treats null/empty as "use context"
+        // Get active sheet, workbook name, and used range from Excel context
+        let activeSheet = "";
         let workbookName = "";
+        let usedRangeEnd = "";
         try {
           await Excel.run(async (context) => {
             const sheet = context.workbook.worksheets.getActiveWorksheet();
             sheet.load("name");
             context.workbook.load("name");
+            const usedRange = sheet.getUsedRangeOrNullObject(true);
+            usedRange.load("address");
             await context.sync();
             activeSheet = sheet.name;
             workbookName = context.workbook.name ?? "";
+            if (!usedRange.isNullObject && usedRange.address) {
+              // address is like "Sheet1!A1:C15" — extract just the end cell
+              const addr = usedRange.address.split("!").pop() ?? "";
+              const endCell = addr.includes(":") ? addr.split(":")[1] : addr;
+              usedRangeEnd = endCell;
+            }
           });
         } catch {
           // Fallback when running outside Excel context
@@ -93,6 +104,8 @@ export function useChat(): ChatState & ChatActions {
           rangeTokens,
           activeSheet,
           workbookName: workbookName || undefined,
+          usedRangeEnd: usedRangeEnd || undefined,
+          locale: navigator.language || undefined,
           conversationHistory: history,
         };
 
@@ -144,6 +157,31 @@ export function useChat(): ChatState & ChatActions {
     setIsLoading(false);
   }, []);
 
+  /** Remove the last user + assistant pair and return the user message text. */
+  const removeLastExchange = useCallback((): string => {
+    let removedUserText = "";
+    setMessages((prev) => {
+      const copy = [...prev];
+      // Remove last assistant
+      for (let i = copy.length - 1; i >= 0; i--) {
+        if (copy[i].role === "assistant") { copy.splice(i, 1); break; }
+      }
+      // Remove last user and capture its text
+      for (let i = copy.length - 1; i >= 0; i--) {
+        if (copy[i].role === "user") {
+          removedUserText = copy[i].content;
+          copy.splice(i, 1);
+          break;
+        }
+      }
+      return copy;
+    });
+    setCurrentPlan(null);
+    setCurrentOptions(null);
+    setInteractionId(null);
+    return removedUserText;
+  }, []);
+
   const clearHistory = useCallback(() => {
     // Cancel any in-flight request immediately
     abortRef.current?.abort();
@@ -176,6 +214,7 @@ export function useChat(): ChatState & ChatActions {
     sendMessage,
     stopMessage,
     clearHistory,
+    removeLastExchange,
     setCurrentPlan,
     setCurrentOptions,
     dismissError,

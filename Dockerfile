@@ -6,8 +6,9 @@
 #   Pass it as a build arg:
 #     docker build --build-arg FRONTEND_URL=https://your-app.example.com .
 #
-# Stage 2 (final): Python — runs the FastAPI backend.
-#   The built frontend (dist/) is copied to ./static and served as static files.
+# Stage 2 (deps): Python — installs dependencies into a virtual env.
+#
+# Stage 3 (final): Python slim — runs the FastAPI backend + serves frontend.
 #   All secrets/keys are injected at runtime via environment variables.
 #
 # Usage:
@@ -24,24 +25,39 @@ WORKDIR /build
 COPY frontend/package*.json ./
 RUN npm ci --no-audit --no-fund
 
-# Copy source
+# Copy source and build
 COPY frontend/ ./
 
-# FRONTEND_URL is baked into manifest.xml by webpack's CopyWebpackPlugin transform.
-# Default keeps localhost:3000 so a plain `docker build .` still works for testing.
 ARG FRONTEND_URL=https://localhost:3000
 ENV FRONTEND_URL=$FRONTEND_URL
 
 RUN npm run build
 
-# ── Stage 2: Python backend ───────────────────────────────────────────────────
+# ── Stage 2: Install Python dependencies ─────────────────────────────────────
+FROM python:3.11-slim AS deps
+
+WORKDIR /deps
+
+COPY backend/requirements.txt .
+RUN python -m venv /deps/venv && \
+    /deps/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /deps/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# ── Stage 3: Final production image ──────────────────────────────────────────
 FROM python:3.11-slim AS final
+
+LABEL org.opencontainers.image.source="https://github.com/your-org/excel-ai-copilot"
+LABEL org.opencontainers.image.description="Excel AI Copilot - Natural language spreadsheet assistant"
+LABEL org.opencontainers.image.version="1.1.0"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/app/venv/bin:$PATH"
 
 WORKDIR /app
 
-# Install Python dependencies
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy pre-built virtual environment from deps stage
+COPY --from=deps /deps/venv ./venv
 
 # Copy backend source
 COPY backend/ .
@@ -49,9 +65,9 @@ COPY backend/ .
 # Copy built frontend into ./static (FastAPI serves this at "/" in OpenShift mode)
 COPY --from=frontend-build /build/dist ./static
 
-# OpenShift runs containers as an arbitrary non-root UID.
-# Making /app group-writable ensures the app can write logs/temp files.
-RUN chmod -R g+rwX /app
+# Create data directory and set permissions for OpenShift (arbitrary non-root UID)
+RUN mkdir -p /app/data && \
+    chmod -R g+rwX /app
 
 # ── Default runtime environment ───────────────────────────────────────────────
 # These are production defaults — override at runtime via env vars or OpenShift
@@ -67,10 +83,12 @@ ENV OPENSHIFT=true \
     LLM_MAX_TOKENS=4096 \
     LLM_TEMPERATURE=0.1
 
+VOLUME ["/app/data"]
+
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
 # Use sh -c so $PORT expansion works
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 2"]

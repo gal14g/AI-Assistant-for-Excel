@@ -11,28 +11,28 @@ The response is always a JSON object with a "responseType" field.
 
 from __future__ import annotations
 
+import functools
+import logging
 import re
+import time
 import uuid
 from datetime import datetime, timezone
-
-import time
-
-import logging
 
 import litellm
 
 from ..config import settings
-
-logger = logging.getLogger(__name__)
 from ..models.chat import ChatRequest, ChatResponse, PlanOption
 from ..models.plan import ExecutionPlan
 from ..services.planner import _litellm_kwargs, CAPABILITY_DESCRIPTIONS, extract_json
+
+logger = logging.getLogger(__name__)
 
 # Silence verbose LiteLLM logs
 litellm.success_callback = []
 
 
-def _build_chat_system_prompt(relevant_actions: list[str] | None = None) -> str:
+@functools.lru_cache(maxsize=64)
+def _build_chat_system_prompt(relevant_actions: tuple[str, ...] | None = None) -> str:
     if relevant_actions:
         filtered = {k: v for k, v in CAPABILITY_DESCRIPTIONS.items() if k in relevant_actions}
     else:
@@ -97,7 +97,8 @@ DECISION RULES:
 - Use responseType "plans" when the user wants to DO something to their spreadsheet (write data, apply formatting, create charts, sort, filter, etc.)
 - Use responseType "message" for everything else: questions, greetings, explanations, "what can you do?", asking for advice, etc.
 - For "message" type, set plans to null
-- Always write a friendly, concise "message" in plain English
+- LANGUAGE: Always reply in the SAME language the user writes in. If the user writes in Hebrew, reply in Hebrew. If in English, reply in English. Match the user's language naturally.
+- Always write a friendly, concise "message"
 
 AVAILABLE EXCEL ACTIONS:
 {caps}
@@ -126,13 +127,20 @@ MULTI-STEP PLANS:
     - Clean up column → remove duplicates → auto-fit columns (3 steps)
     - DASHBOARD: addSheet("Dashboard") → createPivot → createChart → addConditionalFormat → autoFitColumns
 
-COMPLEX FORMULAS — writeFormula supports any Excel formula including:
-- Nested functions: =IF(ISNUMBER(MATCH(A2,Sheet2!A:A,0)),"Found","Not Found")
-- LAMBDA / LET: =LET(x, A2*1.2, IF(x>100, x, 0))
-- Dynamic arrays (Excel 365): =UNIQUE(A:A), =FILTER(A:B, B:B>0), =SORT(A:A)
-- Array formulas: =SUM(IF(A:A="X", B:B, 0)) — wrap in ARRAYFORMULA for older Excel
-- Lookup chains: =IFERROR(XLOOKUP(A2,Sheet2!A:A,Sheet2!C:C),VLOOKUP(A2,Sheet3!A:C,3,0))
+writeFormula RULES (critical):
+- Params: cell (string — SINGLE cell like "A1" or "Sheet1!D2"), formula (string starting with =), fillDown (int, optional)
+- The param is "cell" NOT "range" — writeFormula takes a single cell, not a range
+- COMPLEX FORMULAS supported: nested functions, LAMBDA/LET, dynamic arrays, XLOOKUP, etc.
+- Dynamic arrays (Excel 365): =UNIQUE(A:A), =FILTER(A:B, B:B>0), =SORT(A:A) — these spill automatically
 - When the user asks for a "complex formula" or "dynamic formula", use writeFormula
+
+FIXING SPILL / #REF / #VALUE ERRORS:
+- When a user reports a #SPILL error: the formula's spill range is blocked by other cells. Fix by:
+  1. Clear the blocking cells first (use clearRange on the spill target area)
+  2. Then rewrite the formula
+- When a user reports a #REF error: a referenced range/sheet was deleted. Fix by rewriting the formula with correct references.
+- When a user says "fix the formula" or "there's an error in column X": first READ the range to see the current formulas and values, then determine the fix.
+- ALWAYS ask what the user intended if the fix is ambiguous (respond with responseType "message")
 
 PIVOT FIELD RULES:
 - rows and values accept either header names ("Department") or range addresses ("Sheet2!A:A")
@@ -156,6 +164,18 @@ MATCH RULES (critical):
 - For single-column lookup: matchRecords with lookupRange="Sheet1!A:A", sourceRange="Sheet2!A:A", returnColumns=[2], outputRange="Sheet1!C:C"
 - For MULTI-COLUMN composite match (matching 2+ columns together): matchRecords with lookupRange="Sheet1!C:D" (2-col range), sourceRange="Sheet2!A:B" (2-col range), outputRange="Sheet1!I:I", writeValue="pass"
 - NEVER set values: ["pass"] in a writeValues step to simulate a match — use matchRecords with writeValue instead
+
+writeValues FORMAT RULES (critical — validation will reject if wrong):
+- "range" is REQUIRED — always include a target range like "A1:B31" or "Sheet1!A1:C10"
+- "values" MUST be a 2D array (list of lists) — each inner list is ONE ROW
+- The FIRST ROW of values must ALWAYS be column headers/titles (e.g. ["Date", "Hours"])
+  CORRECT: "values": [["Date", "Hours"], ["01/04/2026", ""], ["02/04/2026", ""]]
+  WRONG:   "values": [["01/04/2026", ""], ["02/04/2026", ""]]  ← missing headers
+  WRONG:   "values": ["01/04/2026", "02/04/2026"]  ← flat list, will be rejected
+  WRONG:   "values": "01/04/2026"  ← not an array at all
+- For generating lists/tables (dates, sequences, templates): use writeValues with the full 2D array
+  Example task: "create a list of dates for April with a column for hours"
+  → writeValues with range: "A1:B31", values: [["Date","Hours"],["01/04/2026",""],["02/04/2026",""],...]
 
 RANGE RULES (very important):
 - Every "range" param must be a SINGLE range address — never comma-separated multi-ranges
@@ -250,6 +270,26 @@ def _build_user_content(request: ChatRequest) -> str:
     clean_message = _clean_user_message(request.userMessage, token_map)
 
     parts = [clean_message]
+
+    # Inject current date/time so the LLM knows "next month", "today", etc.
+    now = datetime.now(timezone.utc)
+    parts.append(f"\nCurrent date: {now.strftime('%A, %d/%m/%Y')} (UTC)")
+
+    # Tell the LLM which date format to use based on the user's locale
+    locale = getattr(request, "locale", None) or ""
+    # Most locales use dd/mm/yyyy; US/Canada/Philippines/etc use mm/dd/yyyy
+    mm_dd_locales = {"en-US", "en-PH", "en-CA", "fr-CA", "ko-KR", "ja-JP", "zh-TW"}
+    locale_prefix = locale.split("-")[0] if locale else ""
+    if locale in mm_dd_locales or locale_prefix in {"ja", "ko", "zh"}:
+        date_fmt = "mm/dd/yyyy"
+    else:
+        date_fmt = "dd/mm/yyyy"
+    parts.append(f"User date format: {date_fmt} — ALWAYS use this format consistently for ALL dates in your response")
+
+    # If the frontend reported the used range, tell the LLM where free space starts
+    if getattr(request, "usedRangeEnd", None):
+        parts.append(f"\nSheet used range ends at: {request.usedRangeEnd} — place new data below or beside it")
+
     if request.rangeTokens:
         # Strip workbook qualifiers before sending to the LLM.
         # The LLM must produce sheet-qualified addresses ("Sheet!A:A") in its JSON,
@@ -267,7 +307,8 @@ def _build_user_content(request: ChatRequest) -> str:
 
 
 async def _build_chat_messages(request: ChatRequest, relevant_actions: list[str] | None = None) -> list[dict]:
-    messages: list[dict] = [{"role": "system", "content": _build_chat_system_prompt(relevant_actions)}]
+    actions_key = tuple(relevant_actions) if relevant_actions else None
+    messages: list[dict] = [{"role": "system", "content": _build_chat_system_prompt(actions_key)}]
 
     # Dynamic few-shot examples — retrieved via vector similarity to the user's query
     few_shot = await _dynamic_few_shot_examples(request.userMessage)
@@ -275,7 +316,8 @@ async def _build_chat_messages(request: ChatRequest, relevant_actions: list[str]
 
     if request.conversationHistory:
         for msg in request.conversationHistory[-8:]:
-            messages.append({"role": msg.role, "content": msg.content})
+            if msg.role in ("user", "assistant"):
+                messages.append({"role": msg.role, "content": msg.content[:5000]})
 
     messages.append({"role": "user", "content": _build_user_content(request)})
     return messages
@@ -283,8 +325,9 @@ async def _build_chat_messages(request: ChatRequest, relevant_actions: list[str]
 
 def _build_retry_messages(request: ChatRequest, relevant_actions: list[str] | None = None) -> list[dict]:
     """Stripped-down prompt for retry — no few-shot examples, harder JSON enforcement."""
+    actions_key = tuple(relevant_actions) if relevant_actions else None
     system = (
-        _build_chat_system_prompt(relevant_actions)
+        _build_chat_system_prompt(actions_key)
         + "\n\nCRITICAL: Your ENTIRE response must be ONE valid JSON object and nothing else. "
         "No prose, no markdown, no explanation — just the JSON object starting with { and ending with }."
     )

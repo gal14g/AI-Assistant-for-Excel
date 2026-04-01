@@ -77,6 +77,11 @@ CAPABILITY_DESCRIPTIONS = {
     "groupRows":         "Group or ungroup rows/columns for outline collapsing. Params: range (row range e.g. '3:8' or column range e.g. 'B:E'), operation ('group'|'ungroup')",
     "setRowColSize":     "Set row height or column width manually. Params: range (row range e.g. '1:1' or column range e.g. 'A:C'), dimension ('rowHeight'|'columnWidth'), size (number — points for rows, characters for columns)",
     "copyPasteRange":    "Copy a range and paste to another location. Params: sourceRange, destinationRange, pasteType ('all'|'values'|'formats'|'formulas', default 'all')",
+    "pageLayout": "Set page layout: margins, orientation, paper size, print area, gridline visibility",
+    "insertPicture": "Insert an image (base64) into a worksheet at a given position and size",
+    "insertShape": "Insert a geometric shape (rectangle, oval, arrow, star, etc.) with fill, outline, and optional text",
+    "insertTextBox": "Insert a text box with styled content at a given position",
+    "addSlicer": "Add a slicer control for filtering a PivotTable or Table by a specific field",
 }
 
 
@@ -163,7 +168,7 @@ def _litellm_kwargs() -> dict:
         "model": settings.llm_model,
         "max_tokens": settings.llm_max_tokens,
         "temperature": settings.llm_temperature,
-        "timeout": 300,
+        "timeout": 60,
     }
     if settings.llm_api_key:
         kwargs["api_key"] = settings.llm_api_key

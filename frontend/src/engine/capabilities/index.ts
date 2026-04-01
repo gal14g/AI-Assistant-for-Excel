@@ -35,5 +35,10 @@ import "./addHyperlink";
 import "./groupRows";
 import "./setRowColSize";
 import "./copyPasteRange";
+import "./pageLayout";
+import "./insertPicture";
+import "./insertShape";
+import "./insertTextBox";
+import "./addSlicer";
 
 export { registry } from "../capabilityRegistry";

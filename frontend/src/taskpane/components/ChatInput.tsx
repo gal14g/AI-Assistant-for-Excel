@@ -4,33 +4,40 @@
  * Range reference insertion:
  *   1. Select any cell / range in Excel — hint bar shows the address.
  *   2. Click the input (or it's already focused).
- *   3. Press Ctrl+V (or ⌘V on Mac) → [[Sheet1!A1:C3]] is inserted at the
+ *   3. Press Ctrl+V (or Cmd+V on Mac) — [[Sheet1!A1:C3]] is inserted at the
  *      exact cursor position.  Normal text paste is not affected because
  *      Ctrl+V only intercepts when there is a live Excel selection to insert.
  *      If no selection is known, Ctrl+V falls through to the browser default.
  *
- * Cursor position:
- *   Read directly from e.currentTarget.selectionStart at the moment the key
- *   is pressed — no async gap, no stale ref.
+ * Toolbar row: Presets menu, Save preset, Undo, Send/Stop toggle.
  */
 
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
+import { Preset } from "../../services/api";
+import { PresetMenu } from "./PresetMenu";
 
 interface Props {
   onSend: (text: string, rangeTokens: { address: string; sheetName: string }[]) => void;
+  onStop: () => void;
+  onUndo?: () => void;
+  onSavePreset?: () => void;
+  onDeletePreset?: (presetId: string) => void;
+  onRenamePreset?: (presetId: string, newName: string) => void;
   disabled?: boolean;
-  /** Currently selected address in Excel – updated live as the user clicks cells */
+  isLoading?: boolean;
+  canUndo?: boolean;
+  presets?: Preset[];
   currentSelectionAddress: string | null;
+  /** When set, prefills the input and focuses it. Change seq to re-trigger for same text. */
+  prefillText?: { text: string; seq: number };
 }
 
 function extractRangeTokens(text: string): { address: string; sheetName: string }[] {
-  // Matches [[Sheet1!A1:C3]] and also [[[WorkbookName.xlsx]Sheet1!A1:C3]]
-  // The inner group allows exactly one ] so it can span [WorkbookName]SheetName!Addr.
   const regex = /\[\[([^\]]*(?:\][^\]]*)?)\]\]/g;
   const tokens: { address: string; sheetName: string }[] = [];
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
-    const ref  = match[1]; // e.g. "[Sales.xlsx]Sheet1!A:A" or "Sheet1!A:A"
+    const ref  = match[1];
     const bang = ref.indexOf("!");
     tokens.push({
       address:   ref,
@@ -55,11 +62,30 @@ function spliceAt(
 
 export const ChatInput: React.FC<Props> = ({
   onSend,
+  onStop,
+  onUndo,
+  onSavePreset,
+  onDeletePreset,
+  onRenamePreset,
   disabled = false,
+  isLoading = false,
+  canUndo = false,
+  presets = [],
   currentSelectionAddress,
+  prefillText,
 }) => {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [presetMenuOpen, setPresetMenuOpen] = useState(false);
+
+  // Prefill the input when an undo restores the previous user message.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: sync prefill from parent
+  useEffect(() => {
+    if (prefillText && prefillText.text) {
+      setText(prefillText.text); // eslint-disable-line react-hooks/set-state-in-effect
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [prefillText?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
@@ -72,15 +98,14 @@ export const ChatInput: React.FC<Props> = ({
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       const ctrl = e.ctrlKey || e.metaKey;
 
-      // Enter → send
+      // Enter -> send (only when not loading)
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        handleSend();
+        if (!isLoading) handleSend();
         return;
       }
 
-      // Ctrl+V → insert current Excel selection at cursor if one exists,
-      // otherwise fall through to let the browser handle a normal paste.
+      // Ctrl+V -> insert current Excel selection at cursor if one exists
       if (ctrl && e.key === "v" && currentSelectionAddress) {
         e.preventDefault();
 
@@ -98,13 +123,33 @@ export const ChatInput: React.FC<Props> = ({
         });
       }
     },
-    [handleSend, currentSelectionAddress]
+    [handleSend, currentSelectionAddress, isLoading]
   );
 
-  const canSend = !disabled && text.trim().length > 0;
+  /** Load preset → prefill the input so user can review/edit before sending */
+  const handlePresetSelect = useCallback((preset: Preset) => {
+    setText(preset.userMessage);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
+  const canSend = !disabled && !isLoading && text.trim().length > 0;
+
+  // Shared compact button style
+  const btnBase: React.CSSProperties = {
+    fontSize: 11,
+    padding: "4px 8px",
+    borderRadius: 4,
+    border: "1px solid #d1d1d1",
+    backgroundColor: "#fff",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 3,
+    whiteSpace: "nowrap",
+  };
 
   return (
-    <div style={{ boxShadow: "0 -1px 0 #e8e8e8", backgroundColor: "#ffffff", padding: "10px 12px" }}>
+    <div dir="auto" style={{ boxShadow: "0 -1px 0 #e8e8e8", backgroundColor: "#ffffff", padding: "10px 12px" }}>
 
       {/* Live selection hint */}
       {currentSelectionAddress && (
@@ -119,59 +164,127 @@ export const ChatInput: React.FC<Props> = ({
             gap: 4,
           }}
         >
-          <span>▸</span>
-          <span>{currentSelectionAddress} — copy and paste here to insert at cursor</span>
+          <span>&#9658;</span>
+          <span>{currentSelectionAddress} — Ctrl+V to insert</span>
         </div>
       )}
 
-      {/* Input row */}
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-        <textarea
-          ref={inputRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={disabled}
-          placeholder="Type a command… select a range in Excel, then copy and paste here to insert reference"
-          rows={3}
-          dir="auto"
-          style={{
-            flex: 1,
-            padding: "8px 12px",
-            border: "1px solid #e0e0e0",
-            borderRadius: 8,
-            fontSize: 13,
-            fontFamily: "inherit",
-            resize: "none",
-            outline: "none",
-            lineHeight: 1.5,
-            transition: "border-color 0.2s",
-          }}
-        />
+      {/* Textarea */}
+      <textarea
+        ref={inputRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+        placeholder="Type a command... select a range in Excel, then Ctrl+V to insert reference"
+        rows={3}
+        dir="auto"
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          padding: "8px 12px",
+          border: "1px solid #e0e0e0",
+          borderRadius: 8,
+          fontSize: 13,
+          fontFamily: "inherit",
+          resize: "none",
+          outline: "none",
+          lineHeight: 1.5,
+          transition: "border-color 0.2s",
+        }}
+      />
+
+      {/* Toolbar row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 0 0 0", position: "relative" }}>
+
+        {/* Presets menu button */}
         <button
-          onClick={handleSend}
-          disabled={!canSend}
+          onClick={() => setPresetMenuOpen((prev) => !prev)}
           style={{
-            padding: "8px 16px",
-            border: "none",
-            borderRadius: 8,
-            backgroundColor: canSend ? "#0f6cbd" : "#c8c6c4",
-            color: "#fff",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: canSend ? "pointer" : "default",
-            height: 36,
-            minWidth: 60,
-            alignSelf: "flex-end",
+            ...btnBase,
+            backgroundColor: presetMenuOpen ? "#f0f4ff" : "#fff",
+            borderColor: presetMenuOpen ? "#5b5fc7" : "#d1d1d1",
+            color: presetMenuOpen ? "#5b5fc7" : undefined,
           }}
+          title="Saved presets"
         >
-          Send
+          &#128203; Presets
         </button>
+
+        {/* Floating preset menu */}
+        {presetMenuOpen && (
+          <PresetMenu
+            presets={presets}
+            onSelect={handlePresetSelect}
+            onDelete={(id) => { onDeletePreset?.(id); }}
+            onRename={(id, name) => { onRenamePreset?.(id, name); }}
+            onClose={() => setPresetMenuOpen(false)}
+          />
+        )}
+
+        {/* Save preset button */}
+        {!isLoading && onSavePreset && (
+          <button onClick={onSavePreset} style={btnBase} title="Save last plan as preset">
+            &#128190; Save
+          </button>
+        )}
+
+        {/* Undo button */}
+        {canUndo && onUndo && (
+          <button onClick={onUndo} style={btnBase}>
+            &#8617; Undo
+          </button>
+        )}
+
+        {/* Send / Stop toggle — pushed to the right */}
+        {isLoading ? (
+          <button
+            onClick={onStop}
+            title="Stop generating"
+            style={{
+              marginLeft: "auto",
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              border: "2px solid #c50f1f",
+              backgroundColor: "#fff",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+              transition: "background-color 0.15s",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#fdf3f3"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#fff"; }}
+          >
+            <div style={{
+              width: 10,
+              height: 10,
+              backgroundColor: "#c50f1f",
+              borderRadius: 2,
+            }} />
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            style={{
+              ...btnBase,
+              marginLeft: "auto",
+              border: "none",
+              backgroundColor: canSend ? "#0f6cbd" : "#c8c6c4",
+              color: "#fff",
+              fontWeight: 600,
+              padding: "4px 12px",
+              cursor: canSend ? "pointer" : "default",
+            }}
+          >
+            Send &#9654;
+          </button>
+        )}
       </div>
 
-      <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>
-        Enter to send · Shift+Enter for new line · Select range in Excel → copy and paste here to insert
-      </div>
     </div>
   );
 };

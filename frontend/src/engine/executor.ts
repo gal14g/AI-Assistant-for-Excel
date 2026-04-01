@@ -201,10 +201,22 @@ function extractRangesFromParams(step: PlanStep): string[] {
   const ranges: string[] = [];
 
   // Check common range field names
-  for (const key of ["range", "outputRange", "cell", "destinationRange", "lookupRange", "sourceRange", "dataRange"]) {
+  for (const key of [
+    "range", "outputRange", "cell", "destinationRange",
+    "lookupRange", "sourceRange", "dataRange", "locationRange",
+    "printArea", "rangeOrName", "tableNameOrRange",
+  ]) {
     if (typeof params[key] === "string") {
       ranges.push(params[key] as string);
     }
+  }
+
+  // For actions that operate on the entire sheet when no range is given
+  // (e.g. findReplace without a range), snapshot the used range of the target sheet.
+  if (ranges.length === 0) {
+    const sheetName = params.sheetName as string | undefined;
+    // Use full-sheet marker — snapshot.ts will resolve via getUsedRange
+    ranges.push(sheetName ? `${sheetName}!A:XFD` : "A:XFD");
   }
 
   return ranges;

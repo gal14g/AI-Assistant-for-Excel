@@ -9,18 +9,20 @@ plan options (responseType="plans") for the user to choose from.
 from __future__ import annotations
 
 from typing import Literal, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .plan import ExecutionPlan
 from .request import RangeTokenRef, ConversationMessage
 
 
 class ChatRequest(BaseModel):
-    userMessage: str
-    rangeTokens: Optional[list[RangeTokenRef]] = None
-    activeSheet: Optional[str] = None
-    workbookName: Optional[str] = None
-    conversationHistory: Optional[list[ConversationMessage]] = None
+    userMessage: str = Field(..., min_length=1, max_length=5000)
+    rangeTokens: Optional[list[RangeTokenRef]] = Field(None, max_length=50)
+    activeSheet: Optional[str] = Field(None, max_length=255)
+    workbookName: Optional[str] = Field(None, max_length=260)
+    usedRangeEnd: Optional[str] = Field(None, max_length=20)
+    locale: Optional[str] = Field(None, max_length=10)
+    conversationHistory: Optional[list[ConversationMessage]] = Field(None, max_length=20)
 
 
 class PlanOption(BaseModel):

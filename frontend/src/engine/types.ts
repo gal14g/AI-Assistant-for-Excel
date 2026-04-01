@@ -46,7 +46,12 @@ export type StepAction =
   | "addHyperlink"
   | "groupRows"
   | "setRowColSize"
-  | "copyPasteRange";
+  | "copyPasteRange"
+  | "pageLayout"
+  | "insertPicture"
+  | "insertShape"
+  | "insertTextBox"
+  | "addSlicer";
 
 // ---------------------------------------------------------------------------
 // Step parameter shapes – one per action
@@ -232,7 +237,6 @@ export interface AddValidationParams {
 }
 
 export interface SheetOpParams {
-  action: "add" | "rename" | "delete" | "copy" | "protect";
   sheetName: string;
   newName?: string; // for rename
   password?: string; // for protect
@@ -352,6 +356,71 @@ export interface CopyPasteRangeParams {
   pasteType?: "all" | "values" | "formats" | "formulas";
 }
 
+export interface PageLayoutParams {
+  sheetName?: string;
+  margins?: {
+    top?: number;
+    bottom?: number;
+    left?: number;
+    right?: number;
+    header?: number;
+    footer?: number;
+  };
+  orientation?: "portrait" | "landscape";
+  paperSize?: string;
+  printArea?: string;
+  showGridlines?: boolean;
+  printGridlines?: boolean;
+}
+
+export interface InsertPictureParams {
+  sheetName?: string;
+  imageBase64: string;
+  left?: number;
+  top?: number;
+  width?: number;
+  height?: number;
+  altText?: string;
+}
+
+export interface InsertShapeParams {
+  sheetName?: string;
+  shapeType: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  fillColor?: string;
+  lineColor?: string;
+  lineWeight?: number;
+  textContent?: string;
+}
+
+export interface InsertTextBoxParams {
+  sheetName?: string;
+  text: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  fontSize?: number;
+  fontFamily?: string;
+  fontColor?: string;
+  fillColor?: string;
+  horizontalAlignment?: string;
+}
+
+export interface AddSlicerParams {
+  sheetName?: string;
+  sourceType: "pivotTable" | "table";
+  sourceName: string;
+  sourceField: string;
+  left?: number;
+  top?: number;
+  width?: number;
+  height?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Union of all param types
 // ---------------------------------------------------------------------------
@@ -386,7 +455,12 @@ export type StepParams =
   | AddHyperlinkParams
   | GroupRowsParams
   | SetRowColSizeParams
-  | CopyPasteRangeParams;
+  | CopyPasteRangeParams
+  | PageLayoutParams
+  | InsertPictureParams
+  | InsertShapeParams
+  | InsertTextBoxParams
+  | AddSlicerParams;
 
 // ---------------------------------------------------------------------------
 // Plan step

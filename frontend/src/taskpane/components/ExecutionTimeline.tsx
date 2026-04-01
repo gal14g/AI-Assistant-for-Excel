@@ -19,9 +19,10 @@ const STATUS_STYLES: Record<StepStatus, { color: string; icon: string }> = {
   preview: { color: "#7b1fa2", icon: "◇" },
 };
 
-export const ExecutionTimeline: React.FC<Props> = ({ state, progressLog }) => {
+export const ExecutionTimeline: React.FC<Props> = React.memo(({ state, progressLog }) => {
   return (
     <div
+      dir="auto"
       style={{
         padding: "12px 14px",
         backgroundColor: "#fafafa",
@@ -120,7 +121,7 @@ export const ExecutionTimeline: React.FC<Props> = ({ state, progressLog }) => {
       )}
     </div>
   );
-};
+});
 
 function getStatusBg(status: string): string {
   switch (status) {

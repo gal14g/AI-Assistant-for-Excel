@@ -11,36 +11,9 @@
  * - event.completed() must be called to signal the action finished.
  */
 
-import { rollbackLastSnapshot, getSnapshotCount } from "../engine/snapshot";
-
-/* global Office, Excel */
+/* global Office */
 
 Office.onReady(() => {
-  // Register ribbon command handlers
-  Office.actions.associate("undoLastRun", undoLastRun);
+  // Ribbon command handlers are registered here.
+  // Undo is handled in the chat panel — no ribbon button needed.
 });
-
-/**
- * Undo the most recent AI Copilot execution.
- * Triggered from the ribbon "Undo Last Run" button.
- */
-async function undoLastRun(event: Office.AddinCommands.Event): Promise<void> {
-  try {
-    if (getSnapshotCount() === 0) {
-      // Nothing to undo – silently complete
-      event.completed();
-      return;
-    }
-
-    await Excel.run(async (context) => {
-      const result = await rollbackLastSnapshot(context);
-      if (result) {
-        console.log(`Rolled back plan ${result.planId} (${result.cells.length} ranges)`);
-      }
-    });
-  } catch (err) {
-    console.error("Undo failed:", err);
-  }
-
-  event.completed();
-}

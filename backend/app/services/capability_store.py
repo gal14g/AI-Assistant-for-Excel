@@ -11,6 +11,7 @@ in smaller prompts, faster responses, and more reliable tool selection.
 
 from __future__ import annotations
 
+import functools
 import logging
 
 from ..config import settings
@@ -218,6 +219,34 @@ CAPABILITY_EXAMPLES: dict[str, list[str]] = {
         "paste values only from A1:B10 to D1",
         "copy formatting from one range to another",
     ],
+    "pageLayout": [
+        "set the page to landscape orientation",
+        "change margins to 1 inch on all sides",
+        "set print area to A1:G20",
+        "hide gridlines on this sheet",
+        "set paper size to A4",
+    ],
+    "insertPicture": [
+        "insert an image into the sheet",
+        "add a logo picture at the top left",
+        "embed a base64 image at position 100,50",
+    ],
+    "insertShape": [
+        "insert a rectangle shape",
+        "add a red arrow pointing right",
+        "draw an oval with blue fill",
+        "insert a star shape at position 200,100",
+    ],
+    "insertTextBox": [
+        "add a text box with the title 'Summary'",
+        "insert a text box at the top of the sheet",
+        "create a text box with bold 14pt text",
+    ],
+    "addSlicer": [
+        "add a slicer for the pivot table",
+        "create a slicer to filter by Region",
+        "add a slicer for the sales table by category",
+    ],
 }
 
 
@@ -287,6 +316,7 @@ def is_ready() -> bool:
     return _ready
 
 
+@functools.lru_cache(maxsize=256)
 def search_capabilities(query: str, top_k: int | None = None) -> list[str]:
     """
     Return the action names of the top-K most relevant capabilities

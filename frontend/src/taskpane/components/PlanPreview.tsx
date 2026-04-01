@@ -32,7 +32,7 @@ const ACTION_LABELS: Record<string, string> = {
   setNumberFormat: "Number format",
 };
 
-export const PlanPreview: React.FC<Props> = ({
+export const PlanPreview: React.FC<Props> = React.memo(({
   plan, validation, isExecuting, isPreviewing,
   onPreview, onRun, onCancel, onUndo, canUndo,
 }) => {
@@ -56,7 +56,7 @@ export const PlanPreview: React.FC<Props> = ({
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 16 }}>⚡</span>
-          <span style={{ fontWeight: 600, fontSize: 14, color: "#242424" }}>
+          <span dir="auto" style={{ fontWeight: 600, fontSize: 14, color: "#242424" }}>
             {plan.summary}
           </span>
         </div>
@@ -85,7 +85,7 @@ export const PlanPreview: React.FC<Props> = ({
               {i + 1}
             </div>
             <div style={{ flex: 1 }}>
-              <span style={{ fontSize: 13, color: "#242424" }}>{step.description}</span>
+              <span dir="auto" style={{ fontSize: 13, color: "#242424" }}>{step.description}</span>
               <span style={{
                 marginLeft: 6, fontSize: 10, color: "#ffffff",
                 backgroundColor: "#5b5fc7", padding: "1px 6px", borderRadius: 4,
@@ -103,17 +103,17 @@ export const PlanPreview: React.FC<Props> = ({
         <div style={{ padding: "8px 16px", borderTop: "1px solid #f0f0f0" }}>
           {validation?.errors.map((e, i) => (
             <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", color: "#c50f1f", fontSize: 12, marginBottom: 3 }}>
-              <span>✕</span><span>{e.message}</span>
+              <span>✕</span><span dir="auto">{e.message}</span>
             </div>
           ))}
           {validation?.warnings.map((w, i) => (
             <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", color: "#c47f17", fontSize: 12, marginBottom: 3 }}>
-              <span>⚠</span><span>{w.message}</span>
+              <span>⚠</span><span dir="auto">{w.message}</span>
             </div>
           ))}
           {plan.warnings?.map((w, i) => (
             <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", color: "#c47f17", fontSize: 12, marginBottom: 3 }}>
-              <span>⚠</span><span>{w}</span>
+              <span>⚠</span><span dir="auto">{w}</span>
             </div>
           ))}
         </div>
@@ -142,7 +142,7 @@ export const PlanPreview: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});
 
 const primaryBtn = (disabled: boolean): React.CSSProperties => ({
   padding: "7px 18px", border: "none", borderRadius: 6,

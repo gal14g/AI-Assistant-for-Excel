@@ -26,7 +26,7 @@ interface Props {
   activeIndex: number;
 }
 
-export const PlanOptionsPanel: React.FC<Props> = ({
+export const PlanOptionsPanel: React.FC<Props> = React.memo(({
   options,
   validation,
   isExecuting,
@@ -45,7 +45,7 @@ export const PlanOptionsPanel: React.FC<Props> = ({
   if (!activePlan) return null;
 
   return (
-    <div>
+    <div dir="auto">
       {/* Tab bar — only show when there are multiple options */}
       {options.length > 1 && (
         <div
@@ -92,4 +92,4 @@ export const PlanOptionsPanel: React.FC<Props> = ({
       />
     </div>
   );
-};
+});

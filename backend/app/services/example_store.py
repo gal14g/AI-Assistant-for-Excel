@@ -102,6 +102,66 @@ SEED_EXAMPLES: list[tuple[str, str]] = [
         "hide columns C through E",
         '{"responseType":"plan","message":"I\'ll hide columns C through E.","plan":{"planId":"ex-hide-1","createdAt":"2024-01-01T00:00:00Z","userRequest":"hide columns C through E","summary":"Hide columns C:E","steps":[{"id":"step_1","description":"Hide columns C through E","action":"hideShow","params":{"target":"columns","rangeOrName":"C:E","hide":true},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
     ),
+    # 16. Page layout
+    (
+        "set landscape orientation and hide gridlines on sheet Report",
+        '{"responseType":"plan","message":"Setting landscape orientation and hiding gridlines.","plan":{"summary":"Set landscape and hide gridlines","steps":[{"stepId":"s1","action":"pageLayout","params":{"sheetName":"Report","orientation":"landscape","showGridlines":false}}]}}',
+    ),
+    # 17. Add slicer
+    (
+        "add a slicer to filter the pivot table Sales by Region",
+        '{"responseType":"plan","message":"Adding a slicer for the Sales pivot table filtered by Region.","plan":{"summary":"Add Region slicer","steps":[{"stepId":"s1","action":"addSlicer","params":{"sourceType":"pivotTable","sourceName":"Sales","sourceField":"Region"}}]}}',
+    ),
+    # 18. Create chart
+    (
+        "create a bar chart from range A1:C10",
+        '{"responseType":"plan","message":"Creating a bar chart from the selected data.","plan":{"summary":"Create bar chart","steps":[{"id":"s1","description":"Create bar chart from A1:C10","action":"createChart","params":{"dataRange":"A1:C10","chartType":"bar"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 19. Insert/delete rows
+    (
+        "insert 3 empty rows above row 5",
+        '{"responseType":"plan","message":"Inserting 3 rows above row 5.","plan":{"summary":"Insert rows","steps":[{"id":"s1","description":"Insert 3 rows above row 5","action":"insertDeleteRows","params":{"range":"5:7","shiftDirection":"down"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 20. Auto-fit columns
+    (
+        "auto-fit all column widths in the sheet",
+        '{"responseType":"plan","message":"Auto-fitting column widths.","plan":{"summary":"Auto-fit columns","steps":[{"id":"s1","description":"Auto-fit all columns","action":"autoFitColumns","params":{},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 21. Add sparkline
+    (
+        "add sparklines in column F from data in B2:E10",
+        '{"responseType":"plan","message":"Adding sparklines.","plan":{"summary":"Add line sparklines","steps":[{"id":"s1","description":"Add sparklines","action":"addSparkline","params":{"dataRange":"B2:E10","locationRange":"F2:F10","sparklineType":"line"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 22. Merge cells
+    (
+        "merge cells A1 to D1 into one cell",
+        '{"responseType":"plan","message":"Merging cells A1:D1.","plan":{"summary":"Merge cells","steps":[{"id":"s1","description":"Merge A1:D1","action":"mergeCells","params":{"range":"A1:D1"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 23. Set number format
+    (
+        "format column B as currency with 2 decimal places",
+        '{"responseType":"plan","message":"Formatting column B as currency.","plan":{"summary":"Set currency format","steps":[{"id":"s1","description":"Format B as currency","action":"setNumberFormat","params":{"range":"B:B","format":"$#,##0.00"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 24. Sheet operations
+    (
+        "add a new sheet called Summary",
+        '{"responseType":"plan","message":"Adding a new sheet called Summary.","plan":{"summary":"Add sheet","steps":[{"id":"s1","description":"Add Summary sheet","action":"addSheet","params":{"sheetName":"Summary"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 25. Remove duplicates
+    (
+        "remove duplicate rows in range A1:F100",
+        '{"responseType":"plan","message":"Removing duplicate rows.","plan":{"summary":"Remove duplicates","steps":[{"id":"s1","description":"Remove duplicates in A1:F100","action":"removeDuplicates","params":{"range":"A1:F100"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 26. Copy paste range
+    (
+        "copy range A1:C10 and paste it to E1",
+        '{"responseType":"plan","message":"Copying range to destination.","plan":{"summary":"Copy and paste range","steps":[{"id":"s1","description":"Copy A1:C10 to E1","action":"copyPasteRange","params":{"sourceRange":"A1:C10","destinationRange":"E1","pasteType":"all"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 27. Generate data — writeValues with 2D array
+    (
+        "Make me a list of dates for the next week with a column to mark hours",
+        '{"responseType":"plans","message":"Here are two options for creating your date list with an hours column.","plans":[{"optionLabel":"Option A: Simple date list","plan":{"planId":"gen-dates-a","createdAt":"2026-04-01T00:00:00Z","userRequest":"Make me a list of dates for the next week with a column to mark hours","summary":"Write dates for the next 7 days in column A with an empty hours column in B","steps":[{"id":"step_1","description":"Write date headers and 7 days of dates with empty hours column","action":"writeValues","params":{"range":"A1:B8","values":[["Date","Hours"],["01/04/2026",""],["02/04/2026",""],["03/04/2026",""],["04/04/2026",""],["05/04/2026",""],["06/04/2026",""],["07/04/2026",""]]},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}]}',
+    ),
 ]
 
 

@@ -14,8 +14,10 @@ A Microsoft Excel Office Add-in that lets you control your spreadsheet with natu
 6. [Switching LLM providers](#switching-llm-providers)
 7. [Deploy to OpenShift](#deploy-to-openshift)
 8. [Installing the add-in in Excel](#installing-the-add-in-in-excel)
-9. [Migrating to a production database](#migrating-to-a-production-database)
-10. [Configuration reference](#configuration-reference)
+9. [CI/CD pipeline](#cicd-pipeline)
+10. [Security](#security)
+11. [Migrating to a production database](#migrating-to-a-production-database)
+12. [Configuration reference](#configuration-reference)
 
 ---
 
@@ -29,6 +31,7 @@ A Microsoft Excel Office Add-in that lets you control your spreadsheet with natu
 - Full undo support after every AI operation
 - **Self-improving**: every plan you approve is stored and used as a few-shot example for future queries via vector similarity search (ChromaDB + sentence-transformers)
 - All interactions are logged to a local feedback database for analysis and fine-tuning
+- Hebrew and English support with full RTL
 
 ---
 
@@ -40,7 +43,7 @@ User's Excel
     | Office.js (HTTPS)
     v
 Frontend (React + TypeScript)
-    |  taskpane UI, execution engine, capability handlers
+    |  taskpane UI, execution engine, 34+ capability handlers
     |  POST /api/chat
     v
 Backend (FastAPI + LiteLLM)
@@ -60,6 +63,23 @@ Backend (FastAPI + LiteLLM)
 Response: plan options -> user picks one -> frontend executes via Office.js
 ```
 
+When deployed to OpenShift, a single container serves both the API and the frontend:
+
+```
+User's Excel
+    |  HTTPS
+    v
+OpenShift Route  (TLS terminated here — free HTTPS)
+    |  HTTP
+    v
+Container :8080
+    |-- GET /api/*      ->  FastAPI (AI chat, plan generation, feedback)
+    |-- GET /health     ->  health check
+    |-- GET /ready      ->  readiness probe (LLM config + vector store)
+    |-- GET /manifest.xml -> Office add-in manifest (users load this URL in Excel)
+    +-- GET /*          ->  React build (taskpane.html, assets)
+```
+
 ---
 
 ## Project structure
@@ -70,118 +90,44 @@ excel-ai-copilot/
 |-- .env.example              All environment variables documented
 |-- .env                      Your local config (git-ignored)
 |-- .gitignore
-|-- .gitlab-ci.yml            GitLab CI/CD pipeline
+|-- .gitlab-ci.yml            GitLab CI/CD pipeline (6-stage)
 |-- Dockerfile                Multi-stage build (frontend + backend in one image)
 |-- docker-compose.yml        Local Docker testing
 |-- README.md                 This file
+|-- SECURITY_CHECKLIST.md     Pre-deployment security hardening guide
+|
+|-- openshift/                OpenShift/Kubernetes deployment manifests
+|   |-- deploy.sh             Quick deploy script (one command)
+|   |-- deployment.yaml       Pod/replica config with probes
+|   |-- service.yaml          ClusterIP networking
+|   |-- route.yaml            HTTPS TLS termination + HSTS
+|   |-- pvc.yaml              Persistent storage for data
+|   |-- configmap.yaml        Non-secret config
+|   |-- secret.yaml           Secret template (LLM_API_KEY)
 |
 |-- backend/                  Python FastAPI backend
-|   |-- main.py               App entry point, startup hooks, CORS, static serving
+|   |-- main.py               App entry point, startup hooks, CORS, rate limiting
 |   |-- requirements.txt      Python dependencies
 |   |-- app/
 |   |   |-- config.py         Settings loaded from .env (Pydantic BaseSettings)
 |   |   |-- db.py             SQLite feedback database (aiosqlite)
-|   |   |
 |   |   |-- routers/          API endpoint definitions
-|   |   |   |-- chat.py         POST /api/chat — main conversational endpoint
-|   |   |   |-- plan.py         POST /api/plan — standalone plan generation
-|   |   |   |-- feedback.py     POST /api/feedback — logs user apply/dismiss
-|   |   |   |-- analyze.py      POST /api/analyze — analytical pipeline (data analysis)
-|   |   |
-|   |   |-- services/         Business logic
-|   |   |   |-- chat_service.py       Chat pipeline: prompt building, LLM call, response parsing
-|   |   |   |-- planner.py            Plan generation, capability descriptions, JSON extraction
-|   |   |   |-- validator.py          Server-side plan validation
-|   |   |   |-- capability_store.py   ChromaDB vector search for relevant actions
-|   |   |   |-- example_store.py      ChromaDB vector search for few-shot examples
-|   |   |   |-- chroma_client.py      Shared ChromaDB client + embedding function
-|   |   |   |-- matching_service.py   Column matching utilities
-|   |   |   |-- explanation_service.py  Results explanation generation
-|   |   |   |-- clarification_service.py  Clarification request handling
-|   |   |
+|   |   |-- services/         Business logic (chat, planner, vector search)
 |   |   |-- models/           Pydantic request/response schemas
-|   |   |   |-- chat.py         ChatRequest, ChatResponse, PlanOption
-|   |   |   |-- plan.py         ExecutionPlan, PlanStep, StepAction enum, param models
-|   |   |   |-- request.py      PlanRequest, PlanResponse, ValidationResponse
-|   |   |   |-- analytical_plan.py  Analytical pipeline models
-|   |   |   |-- tool_output.py  Tool output models for analysis
-|   |   |
 |   |   |-- prompts/          LLM system prompt templates
-|   |   |   |-- planner_system.txt  Planner system prompt with {CAPABILITIES} placeholder
-|   |   |
-|   |   |-- orchestrator/     Analytical pipeline orchestration
-|   |   |-- planner/          Analytical planner (separate from chat planner)
-|   |   |-- tools/            Data analysis tools (matching, aggregation, cleaning, comparison)
-|   |
-|   |-- data/                 Runtime data (git-ignored)
-|       |-- chroma/           ChromaDB vector embeddings (auto-created on first start)
-|       |-- feedback.db       SQLite feedback database (auto-created on first start)
+|   |-- data/                 Runtime data (git-ignored, auto-created)
+|   |-- tests/
 |
 |-- frontend/                 React + TypeScript Office Add-in
-    |-- manifest.xml          Office Add-in manifest (loaded by Excel)
-    |-- webpack.config.js     Dev server config with HTTPS + API proxy
+    |-- manifest.xml          Office add-in manifest (loaded by Excel)
+    |-- webpack.config.js     Build config + HTTPS + API proxy
     |-- package.json
-    |-- tsconfig.json
     |-- src/
-        |-- index.tsx         App entry point
-        |
-        |-- engine/           Execution engine (runs plans inside Excel)
-        |   |-- types.ts        All TypeScript types (ExecutionPlan, StepAction, params, etc.)
-        |   |-- executor.ts     Executes plans step-by-step via Office.js
-        |   |-- validator.ts    Client-side plan validation (param checks per action)
-        |   |-- snapshot.ts     Snapshot/rollback for undo support
-        |   |-- capabilityRegistry.ts  Registry pattern for capability handlers
-        |   |-- capabilities/   One file per Excel action (34 total)
-        |       |-- index.ts      Imports all capability handlers to register them
-        |       |-- rangeUtils.ts Shared range resolution helper
-        |       |-- readRange.ts, writeValues.ts, writeFormula.ts
-        |       |-- matchRecords.ts, groupSum.ts
-        |       |-- createTable.ts, applyFilter.ts, sortRange.ts
-        |       |-- createPivot.ts, createChart.ts
-        |       |-- conditionalFormat.ts, cleanupText.ts, removeDuplicates.ts
-        |       |-- freezePanes.ts, findReplace.ts, validation.ts
-        |       |-- sheetOps.ts (add/rename/delete/copy/protect sheet)
-        |       |-- autoFitColumns.ts, mergeCells.ts, setNumberFormat.ts
-        |       |-- insertDeleteRows.ts, addSparkline.ts
-        |       |-- formatCells.ts, clearRange.ts, hideShow.ts
-        |       |-- addComment.ts, addHyperlink.ts, groupRows.ts
-        |       |-- setRowColSize.ts, copyPasteRange.ts
-        |
+        |-- engine/           Execution engine (34+ capability handlers)
         |-- services/         API client
-        |   |-- api.ts          fetch wrappers for /api/chat, /api/plan, /api/feedback
-        |
-        |-- taskpane/         UI layer
-        |   |-- App.tsx         Root component
-        |   |-- components/
-        |   |   |-- ChatPanel.tsx         Main chat interface
-        |   |   |-- ChatInput.tsx         Message input with range token support
-        |   |   |-- MessageBubble.tsx     Chat message rendering
-        |   |   |-- PlanOptionsPanel.tsx  Tab-based multi-option plan selector
-        |   |   |-- PlanPreview.tsx       Single plan card (steps, validation, actions)
-        |   |   |-- ExecutionTimeline.tsx Step-by-step execution progress
-        |   |   |-- SuggestedPrompts.tsx  Quick-start prompt suggestions
-        |   |   |-- RangeToken.tsx        Inline range reference display
-        |   |-- hooks/
-        |       |-- useChat.ts            Chat state, message history, plan options
-        |       |-- usePlanExecution.ts   Plan execution, preview, undo
-        |       |-- useSelectionTracker.ts  Tracks Excel selection changes
-        |
-        |-- shared/
-        |   |-- planSchema.ts   Shared plan schema utilities
-        |
-        |-- commands/
-            |-- commands.ts     Office ribbon command handlers
+        |-- taskpane/         UI components + hooks
+        |-- commands/         Office ribbon command handlers
 ```
-
-### Key directories explained
-
-| Directory | Purpose |
-|---|---|
-| `backend/app/services/` | Core business logic. `chat_service.py` orchestrates the entire chat flow: vector search for capabilities, vector search for few-shot examples, LLM call, response parsing, DB logging. |
-| `backend/app/models/` | Pydantic models that define the API contract. `plan.py` is the most important — it defines all 34 `StepAction` types and their parameter schemas. |
-| `backend/data/` | Auto-created at runtime. Contains ChromaDB embeddings and the SQLite feedback database. Git-ignored. Deleted safely — regenerated on next startup. |
-| `frontend/src/engine/` | The execution engine that runs inside Excel. Each capability in `capabilities/` is a self-contained handler that translates a plan step into Office.js API calls. |
-| `frontend/src/taskpane/` | React UI. `ChatPanel.tsx` is the main component. `PlanOptionsPanel.tsx` shows multiple plan options as tabs. |
 
 ---
 
@@ -236,7 +182,7 @@ uvicorn main:app --reload --port 8000
 On first startup, the backend will:
 1. Download the `all-MiniLM-L6-v2` embedding model (~80MB, cached after first time)
 2. Index all 34 capabilities into ChromaDB (~2 seconds)
-3. Seed 15 curated few-shot examples into the example store
+3. Seed curated few-shot examples into the example store
 4. Create the SQLite feedback database
 
 **Terminal 2 -- Frontend:**
@@ -267,7 +213,7 @@ Accept the self-signed certificate warning. The **AI Copilot** tab appears in th
 ### Backend changes
 The backend reloads automatically (`--reload` flag). Just save the file -- no restart needed.
 
-**Exception:** If you add a new capability, you must restart the backend so ChromaDB re-indexes. The store detects the document count mismatch and re-indexes automatically.
+**Exception:** If you add a new capability, you must restart the backend so ChromaDB re-indexes.
 
 ### Frontend changes
 Webpack hot-reloads automatically. Save the file and the add-in updates within a few seconds.
@@ -282,13 +228,6 @@ Webpack hot-reloads automatically. Save the file and the add-in updates within a
 6. **Frontend registration** (`frontend/src/engine/capabilities/index.ts`): Import the new handler
 7. **Frontend validation** (`frontend/src/engine/validator.ts`): Add required field checks
 8. Restart backend (so ChromaDB re-indexes)
-
-### Do I need to rebuild Docker every time?
-
-**No.** Docker is only for deploying to OpenShift. Your local development loop is:
-```
-Edit code -> save -> see changes live in Excel immediately
-```
 
 ---
 
@@ -334,7 +273,7 @@ LLM_JSON_MODE=true
 | `mistral-small:22b` | ~13GB | Strong instruction following | Medium |
 | `qwen2.5:32b` | ~20GB | Excellent JSON | Slower |
 
-> **Tip:** Set `LLM_JSON_MODE=true` for Ollama models. This forces the LLM to output valid JSON, reducing parse failures.
+> **Tip:** Set `LLM_JSON_MODE=true` for Ollama models to force valid JSON output.
 
 ### Azure OpenAI
 
@@ -359,14 +298,6 @@ LLM_MODEL=bedrock/anthropic.claude-3-sonnet-20240229-v1:0
 # Uses AWS credentials from environment or ~/.aws/credentials
 ```
 
-### LiteLLM proxy / any OpenAI-compatible endpoint
-
-```env
-LLM_MODEL=openai/my-model
-LLM_BASE_URL=http://my-litellm-proxy:4000
-LLM_API_KEY=proxy-key-if-required
-```
-
 ### Switching at runtime
 
 Change the values in `.env` and restart the backend. No code changes needed. No rebuild needed.
@@ -375,40 +306,26 @@ Change the values in `.env` and restart the backend. No code changes needed. No 
 
 ## Deploy to OpenShift
 
-### How it works
+### Quick deploy (one command)
 
-The Docker image bundles the React frontend and FastAPI backend into a single container. OpenShift provides HTTPS automatically via a Route.
+```bash
+# Build and push the Docker image first
+docker build --build-arg FRONTEND_URL=https://excel-copilot.apps.my-cluster.example.com -t excel-ai-copilot .
+docker push <registry>/excel-ai-copilot:latest
 
-```
-User's Excel
-    |  HTTPS
-    v
-OpenShift Route  (TLS terminated here -- free HTTPS)
-    |  HTTP
-    v
-Container :8080
-    |-- GET /api/*    ->  FastAPI (AI chat, plan generation, feedback)
-    |-- GET /health   ->  health check
-    |-- GET /ready    ->  readiness probe (LLM config + vector store + DB)
-    +-- GET /*        ->  React build (taskpane.html, manifest.xml, assets)
+# Deploy to OpenShift
+./openshift/deploy.sh "your-llm-api-key" "<registry>/excel-ai-copilot:latest"
 ```
 
-Multiple users can use the add-in simultaneously. FastAPI is fully async -- while one user's LLM request is in-flight, other requests are handled concurrently.
+The script will:
+1. Create the secret with your LLM API key
+2. Apply all Kubernetes manifests (PVC, ConfigMap, Deployment, Service, Route)
+3. Set the image and wait for rollout
+4. Print the app URL and manifest URL for Excel installation
 
-### Prerequisites
+### Step-by-step deployment
 
-- Docker installed and running
-- `oc` CLI installed ([download](https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/))
-- Logged in to your cluster: `oc login https://your-cluster.example.com`
-- Access to a container image registry
-
-### Step 1 -- Get your public URL
-
-The URL pattern is: `https://<app-name>.apps.<cluster-domain>`
-
-Example: `https://excel-copilot.apps.my-cluster.example.com`
-
-### Step 2 -- Build the Docker image
+#### Step 1 -- Build the Docker image
 
 ```bash
 docker build \
@@ -417,44 +334,57 @@ docker build \
   .
 ```
 
-### Step 3 -- Push the image
+`FRONTEND_URL` is baked into `manifest.xml` at build time. It must match the Route URL where users will access the add-in.
 
-**OpenShift built-in registry:**
+#### Step 2 -- Push the image
+
 ```bash
+# GitLab Registry (CI does this automatically):
+docker push registry.gitlab.com/your-group/excel-copilot:latest
+
+# Or Quay.io:
+docker push quay.io/your-user/excel-ai-copilot:latest
+
+# Or OpenShift built-in registry:
 oc registry login
 REGISTRY=$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}')
-docker tag excel-ai-copilot:latest $REGISTRY/<your-namespace>/excel-ai-copilot:latest
-docker push $REGISTRY/<your-namespace>/excel-ai-copilot:latest
+docker tag excel-ai-copilot:latest $REGISTRY/<namespace>/excel-ai-copilot:latest
+docker push $REGISTRY/<namespace>/excel-ai-copilot:latest
 ```
 
-**Quay.io:**
-```bash
-docker login quay.io
-docker tag excel-ai-copilot:latest quay.io/<user>/excel-ai-copilot:latest
-docker push quay.io/<user>/excel-ai-copilot:latest
-```
+#### Step 3 -- Configure
 
-### Step 4 -- Create secrets
+Edit `openshift/configmap.yaml`:
+- Set `LLM_MODEL` to your chosen provider
+- Set `CORS_ORIGINS` to your Route URL
+
+#### Step 4 -- Create secrets and deploy
 
 ```bash
+oc login https://your-cluster.example.com
+oc project my-namespace
+
+# Create secret
 oc create secret generic excel-copilot-secrets \
-  --from-literal=LLM_API_KEY=your-api-key-here \
-  --from-literal=LLM_MODEL=claude-sonnet-4-20250514
+  --from-literal=LLM_API_KEY=your-api-key-here
+
+# Apply all manifests
+oc apply -f openshift/
+
+# Set your image
+oc set image deployment/excel-copilot excel-copilot=<registry>/excel-ai-copilot:latest
+
+# Wait for rollout
+oc rollout status deployment/excel-copilot --timeout=180s
 ```
 
-### Step 5 -- Deploy
+#### Step 5 -- Verify
 
 ```bash
-oc new-app --image=quay.io/<user>/excel-ai-copilot:latest --name=excel-copilot
-oc set env deployment/excel-copilot OPENSHIFT=true
-oc set env deployment/excel-copilot --from=secret/excel-copilot-secrets
-oc create route edge excel-copilot --service=excel-copilot --port=8080
+# Get the route URL
 oc get route excel-copilot
-```
 
-### Step 6 -- Verify
-
-```bash
+# Test endpoints
 curl https://excel-copilot.apps.my-cluster.example.com/health
 curl https://excel-copilot.apps.my-cluster.example.com/ready
 ```
@@ -463,146 +393,148 @@ curl https://excel-copilot.apps.my-cluster.example.com/ready
 
 ```bash
 docker build --build-arg FRONTEND_URL=https://... -t excel-ai-copilot:latest .
-docker push quay.io/<user>/excel-ai-copilot:latest
+docker push <registry>/excel-ai-copilot:latest
 oc rollout restart deployment/excel-copilot
 ```
+
+Or use GitLab CI -- push to `main` and click the manual "Deploy" button in the pipeline.
 
 ---
 
 ## Installing the add-in in Excel
 
+Once deployed, the server serves the `manifest.xml` file that Excel needs to load the add-in.
+
 ### For yourself (sideloading)
 
-1. Open Excel
+1. Open Excel (desktop or web)
 2. **Insert > Add-ins > Upload My Add-in**
 3. Enter the manifest URL:
    - Local dev: `https://localhost:3000/manifest.xml`
-   - OpenShift: `https://excel-copilot.apps.my-cluster.example.com/manifest.xml`
+   - Production: `https://excel-copilot.apps.my-cluster.example.com/manifest.xml`
 4. The **AI Copilot** tab appears in the Excel ribbon
+5. Click "Open Copilot" to open the task pane
 
-### For your organisation (Microsoft 365 Admin Center)
+> **Note:** Sideloaded add-ins persist per-device. If you clear your Office cache or switch devices, you'll need to sideload again.
+
+### Making the ribbon permanent (org-wide deployment via Microsoft 365 Admin Center)
+
+To make the add-in appear automatically for all users in your organization:
 
 1. Log in to [admin.microsoft.com](https://admin.microsoft.com)
-2. **Settings > Integrated apps > Upload custom apps**
-3. Select **Provide link to manifest** and enter your manifest URL
-4. Assign to users, groups, or the entire organisation
-5. The add-in rolls out to assigned users within 24 hours
+2. Go to **Settings > Integrated apps > Upload custom apps**
+3. Select **Provide link to manifest file**
+4. Enter your manifest URL: `https://excel-copilot.apps.my-cluster.example.com/manifest.xml`
+5. Click **Next** and assign to:
+   - **Entire organization** — everyone gets it
+   - **Specific users/groups** — targeted rollout
+6. Click **Deploy**
+
+The add-in will appear in all assigned users' Excel ribbon within **24 hours** (typically faster). Users do **not** need to install anything — it just appears automatically.
+
+### Making it permanent for yourself (without admin access)
+
+If you don't have Microsoft 365 admin access:
+
+1. Sideload the add-in as described above
+2. Once loaded, **right-click the "AI Copilot" ribbon tab** > **Pin to ribbon** (Excel desktop)
+3. For Excel on the web: the sideloaded add-in persists in your browser profile
+
+> **Tip:** On Excel desktop (Windows), sideloaded add-ins persist in `%LOCALAPPDATA%\Microsoft\Office\16.0\Wef\`. They survive Excel restarts but not Office reinstalls.
+
+### SharePoint catalog (alternative to Admin Center)
+
+For organizations that prefer SharePoint:
+
+1. Create an [App Catalog](https://learn.microsoft.com/en-us/office/dev/add-ins/publish/publish-task-pane-and-content-add-ins-to-an-add-in-catalog) site collection
+2. Upload `manifest.xml` to the catalog
+3. Users find the add-in via **Insert > Add-ins > My Organization**
+
+---
+
+## CI/CD pipeline
+
+The GitLab CI/CD pipeline runs automatically on pushes to `main` and merge requests.
+
+### Stages
+
+| Stage | Jobs | Purpose |
+|---|---|---|
+| **lint** | `lint:frontend`, `lint:backend` | ESLint, TypeScript, Ruff, MyPy |
+| **build** | `build:frontend` | Webpack production build |
+| **test** | `test:frontend`, `test:backend` | Jest, pytest |
+| **security** | `security:frontend`, `security:backend` | npm audit, pip-audit |
+| **docker** | `docker:build` | Build + push Docker image to GitLab registry |
+| **deploy** | `deploy:openshift` | Manual trigger — applies manifests and updates image |
+
+### Required CI/CD variables
+
+Set these in **GitLab > Settings > CI/CD > Variables**:
+
+| Variable | Required | Description |
+|---|---|---|
+| `LLM_MODEL` | Yes | LiteLLM model string |
+| `LLM_API_KEY` | Yes | API key (mark as **masked** + **protected**) |
+| `FRONTEND_URL` | Yes | Public URL of the deployed add-in |
+| `OPENSHIFT_SERVER` | For deploy | Cluster API URL |
+| `OPENSHIFT_TOKEN` | For deploy | Service account token |
+| `OPENSHIFT_NS` | For deploy | Target namespace |
+
+### Workflow
+
+1. Push code to a branch
+2. Create a merge request — lint, build, test, security stages run automatically
+3. Merge to `main` — docker stage builds and pushes the image
+4. Click **Deploy** in the pipeline UI — deploys to OpenShift
+
+---
+
+## Security
+
+The application implements the following security measures:
+
+- **CORS**: Explicit origins only (no wildcard)
+- **Rate limiting**: 15 req/min on chat, 30 req/min on feedback (per IP)
+- **Security headers**: CSP, HSTS, X-Frame-Options, X-Content-Type-Options
+- **Input validation**: Pydantic Field constraints on all request models
+- **Error sanitization**: Generic errors to clients, full stack traces logged server-side
+- **Role restriction**: Only `user`/`assistant` roles accepted in conversation history
+- **Debug mode**: Disabled by default in production (no `/docs` or `/redoc`)
+- **TLS**: Edge termination via OpenShift Route with HTTPS redirect
+- **Secrets**: LLM API key injected via OpenShift Secrets, never in images
+
+See [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md) for the full checklist.
 
 ---
 
 ## Migrating to a production database
 
-The project currently uses **SQLite** (via `aiosqlite`) for the feedback database and **ChromaDB** (file-based) for vector embeddings. Both store data in `backend/data/`. This is fine for single-instance deployments but won't work for multi-replica setups.
+The project uses **SQLite** + **ChromaDB** (file-based) by default. This works for single-instance deployments. For multi-replica setups, migrate to **PostgreSQL + pgvector**.
 
 ### When to migrate
 
-- You're running multiple backend replicas (horizontal scaling)
-- You need shared state across instances
-- You want proper backup/restore, replication, or monitoring
+- Running multiple backend replicas
+- Need shared state across instances
+- Want proper backup/restore and monitoring
 
-### Option 1: PostgreSQL for feedback + pgvector for embeddings
+### PostgreSQL + pgvector migration
 
-This is the cleanest migration path -- one database for everything.
+1. Replace `aiosqlite` with `asyncpg` + `sqlalchemy[asyncio]` in `requirements.txt`
+2. Update `backend/app/db.py` to use SQLAlchemy async engine
+3. Replace ChromaDB with pgvector in `backend/app/services/chroma_client.py`
+4. Set `DATABASE_URL=postgresql+asyncpg://user:pass@host/db` in environment
 
-**1. Install pgvector extension on your PostgreSQL instance:**
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
+The table schemas remain identical. The `sentence-transformers` model stays the same — only the storage backend changes.
 
-**2. Replace `aiosqlite` with `asyncpg`:**
+### Files to modify
 
-In `requirements.txt`:
-```diff
-- aiosqlite>=0.20.0
-+ asyncpg>=0.29.0
-+ sqlalchemy[asyncio]>=2.0.0
-```
-
-**3. Update `backend/app/db.py`:**
-
-Replace the SQLite connection with SQLAlchemy async engine:
-
-```python
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-
-engine = create_async_engine(settings.database_url)  # e.g. "postgresql+asyncpg://user:pass@host/db"
-async_session = sessionmaker(engine, class_=AsyncSession)
-```
-
-The table schemas remain identical -- just change the connection layer. All `await _db.execute(...)` calls become `await session.execute(text(...))`.
-
-**4. Update `backend/app/config.py`:**
-
-```python
-database_url: str = "sqlite+aiosqlite:///data/feedback.db"  # default for local dev
-```
-
-For production, set via environment:
-```env
-DATABASE_URL=postgresql+asyncpg://user:password@postgres-host:5432/excel_copilot
-```
-
-**5. Replace ChromaDB with pgvector:**
-
-In `backend/app/services/chroma_client.py`, replace the ChromaDB client with pgvector queries:
-
-```python
-# Instead of ChromaDB collection.query(), use:
-# SELECT * FROM embeddings ORDER BY embedding <=> $1 LIMIT $2
-```
-
-The `sentence-transformers` model stays the same -- you just store and query embeddings in PostgreSQL instead of ChromaDB.
-
-**6. Tables to create in PostgreSQL:**
-
-```sql
--- Feedback tables (same schema as SQLite)
-CREATE TABLE interactions ( ... );  -- same columns
-CREATE TABLE choices ( ... );        -- same columns
-CREATE TABLE few_shot_examples ( ... ); -- same columns
-
--- Vector tables (replaces ChromaDB)
-CREATE TABLE capability_embeddings (
-    id TEXT PRIMARY KEY,
-    action TEXT NOT NULL,
-    document TEXT NOT NULL,
-    embedding vector(384)  -- all-MiniLM-L6-v2 produces 384-dim vectors
-);
-
-CREATE TABLE example_embeddings (
-    id TEXT PRIMARY KEY,
-    sqlite_id TEXT NOT NULL,
-    source TEXT NOT NULL,
-    document TEXT NOT NULL,
-    embedding vector(384)
-);
-
--- Create indexes for fast similarity search
-CREATE INDEX ON capability_embeddings USING ivfflat (embedding vector_cosine_ops);
-CREATE INDEX ON example_embeddings USING ivfflat (embedding vector_cosine_ops);
-```
-
-### Option 2: Keep SQLite + separate vector DB
-
-If you prefer managed vector databases:
-
-- **Pinecone**: Replace ChromaDB calls with `pinecone.Index.query()`
-- **Weaviate**: Replace with Weaviate client
-- **Qdrant**: Replace with Qdrant client
-
-The interface is the same: embed query -> find top-K -> return IDs -> fetch full data from SQL.
-
-### Files that reference the database
-
-| File | What it does | What to change |
-|---|---|---|
-| `backend/app/db.py` | SQLite connection, all CRUD operations | Replace with asyncpg/SQLAlchemy |
-| `backend/app/services/chroma_client.py` | ChromaDB client + embedding function | Replace with pgvector or managed vector DB |
-| `backend/app/services/capability_store.py` | Indexes capabilities, searches by query | Change collection calls to SQL queries |
-| `backend/app/services/example_store.py` | Indexes few-shot examples, searches by query | Change collection calls to SQL queries |
-| `backend/app/config.py` | `feedback_db_path`, `chroma_persist_dir` | Replace with `database_url` |
-| `backend/main.py` | Calls `init_db()`, `init_store()`, `init_example_store()` | Update init functions |
+| File | Change |
+|---|---|
+| `backend/app/db.py` | SQLite -> asyncpg/SQLAlchemy |
+| `backend/app/services/chroma_client.py` | ChromaDB -> pgvector |
+| `backend/app/services/capability_store.py` | Collection calls -> SQL |
+| `backend/app/services/example_store.py` | Collection calls -> SQL |
+| `backend/app/config.py` | Add `database_url` setting |
 
 ---
 
@@ -631,26 +563,20 @@ All settings are environment variables. Copy `.env.example` to `.env` in the pro
 | `CAPABILITY_TOP_K` | `10` | How many capabilities to include per query |
 | `FEW_SHOT_TOP_K` | `5` | How many few-shot examples to retrieve per query |
 
-### Feedback database
-
-| Variable | Default | Description |
-|---|---|---|
-| `FEEDBACK_DB_PATH` | `backend/data/feedback.db` | SQLite database file path |
-
 ### Server
 
 | Variable | Default | Description |
 |---|---|---|
 | `HOST` | `0.0.0.0` | Bind address |
-| `PORT` | `8000` | Port (use 8080 for OpenShift) |
-| `DEBUG` | `true` | Enables uvicorn auto-reload |
-| `CORS_ORIGINS` | `["https://localhost:3000"]` | Allowed CORS origins |
+| `PORT` | `8000` | Port (8080 in Docker/OpenShift) |
+| `DEBUG` | `true` | Enables auto-reload + API docs |
+| `CORS_ORIGINS` | `["https://localhost:3000"]` | Allowed CORS origins (explicit list, no wildcards) |
 
 ### Deployment
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENSHIFT` | `false` | Master production switch (serves static files, relaxes CORS) |
+| `OPENSHIFT` | `false` | Production mode (static serving, security headers) |
 | `SERVE_STATIC` | `false` | Serve built frontend from FastAPI |
 | `STATIC_DIR` | `./static` | Path to built frontend files |
 | `FRONTEND_URL` | `https://localhost:3000` | **Build-time only** -- baked into manifest.xml |

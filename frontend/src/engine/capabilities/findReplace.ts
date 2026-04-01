@@ -97,6 +97,18 @@ async function handler(
         matched = displayStr.includes(findStr);
       }
 
+      // Date-aware matching: if both find and display parse as dates, compare
+      // calendrically so "21/04/2026" matches a cell showing "21/4/26" and vice versa.
+      if (!matched && findDate) {
+        const displayDate = parseDateString(displayText.trim());
+        if (displayDate &&
+            displayDate.day === findDate.day &&
+            displayDate.month === findDate.month &&
+            displayDate.year === findDate.year) {
+          matched = true;
+        }
+      }
+
       if (!matched) continue;
 
       const rawVal = valRow[ci];
@@ -142,32 +154,28 @@ function escapeRegex(str: string): string {
 // Users search by formatted text (e.g. "19/04/2026") but .values returns a
 // number.  These helpers bridge the gap.
 
+/** Expand a 2-digit year to 4-digit (00-49 → 2000s, 50-99 → 1900s). */
+function expandYear(y: number): number {
+  if (y >= 100) return y;          // already 4-digit
+  return y < 50 ? 2000 + y : 1900 + y;
+}
+
 const DATE_PATTERNS = [
-  // dd/mm/yyyy  or  dd-mm-yyyy  or  dd.mm.yyyy
-  /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/,
-  // yyyy-mm-dd  or  yyyy/mm/dd
+  // dd/mm/yyyy  or  dd/mm/yy  or  dd-mm-yyyy  or  dd.mm.yyyy
+  /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/,
+  // yyyy-mm-dd  or  yyyy/mm/dd  (4-digit year only)
   /^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/,
 ];
 
 /** Try to parse a user-typed date string into {day, month, year}. */
 function parseDateString(s: string): { day: number; month: number; year: number } | null {
-  // dd/mm/yyyy  dd-mm-yyyy  dd.mm.yyyy
+  // dd/mm/yy(yy)  dd-mm-yy(yy)  dd.mm.yy(yy)
   let m = s.match(DATE_PATTERNS[0]);
-  if (m) return { day: +m[1], month: +m[2], year: +m[3] };
+  if (m) return { day: +m[1], month: +m[2], year: expandYear(+m[3]) };
   // yyyy-mm-dd  yyyy/mm/dd
   m = s.match(DATE_PATTERNS[1]);
   if (m) return { day: +m[3], month: +m[2], year: +m[1] };
   return null;
-}
-
-/** Convert Excel serial number → JS Date (accounts for Lotus 1-2-3 bug). */
-function excelSerialToDate(serial: number): Date | null {
-  if (serial < 1 || serial > 2958465) return null; // out of range
-  // Excel epoch: serial 1 = Jan 1 1900, so serial 0 = Dec 31 1899 ("Jan 0 1900").
-  // Serial 60 = non-existent Feb 29 1900 (Lotus 1-2-3 bug) — skip it.
-  const adjusted = serial > 60 ? serial - 1 : serial;
-  const ms = Date.UTC(1899, 11, 31) + adjusted * 86400000;
-  return new Date(ms);
 }
 
 /** Convert {day, month, year} → Excel serial number. */
@@ -177,23 +185,6 @@ function dateToExcelSerial(d: { day: number; month: number; year: number }): num
   let serial = Math.round((ms - epoch) / 86400000);
   if (serial >= 60) serial += 1; // account for Lotus 1-2-3 fake Feb 29 1900
   return serial;
-}
-
-/**
- * Check if an Excel numeric cell value matches the find date string.
- * Returns true when the serial date represents the same calendar date.
- */
-function numericCellMatchesDate(
-  cellValue: number,
-  findDate: { day: number; month: number; year: number }
-): boolean {
-  const d = excelSerialToDate(cellValue);
-  if (!d) return false;
-  return (
-    d.getUTCFullYear() === findDate.year &&
-    d.getUTCMonth() + 1 === findDate.month &&
-    d.getUTCDate() === findDate.day
-  );
 }
 
 registry.register(meta, handler as any);
