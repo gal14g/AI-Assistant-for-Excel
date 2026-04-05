@@ -2,11 +2,11 @@
 Unified LLM client using the OpenAI SDK.
 
 Supports any OpenAI-compatible provider by configuring base_url:
-  - OpenAI:    (default base_url)
-  - Gemini:    https://generativelanguage.googleapis.com/v1beta/openai/
-  - Azure:     https://<resource>.openai.azure.com/
-  - Ollama:    http://localhost:11434/v1
-  - Anthropic: requires LLM_BASE_URL pointing to an OpenAI-compatible proxy
+  - OpenAI:    (default base_url — no prefix needed)
+  - Anthropic: https://api.anthropic.com/v1/  (prefix: anthropic/)
+  - Gemini:    https://generativelanguage.googleapis.com/v1beta/openai/  (prefix: gemini/)
+  - Ollama:    http://localhost:11434/v1  (prefix: ollama/)
+  - Azure:     LLM_BASE_URL=https://<resource>.openai.azure.com/
 
 Provider is auto-detected from LLM_MODEL prefix or LLM_BASE_URL.
 """
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # from the model prefix.
 
 _PROVIDER_BASE_URLS: dict[str, str] = {
+    "anthropic": "https://api.anthropic.com/v1/",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "ollama": "http://localhost:11434/v1",
 }
@@ -53,9 +54,10 @@ def _resolve_base_url() -> str | None:
 def _resolve_model_name() -> str:
     """
     Strip provider prefix from model name for providers that don't need it.
-    e.g. "gemini/gemini-2.0-flash" -> "gemini-2.0-flash"
-         "ollama/qwen2.5:14b"      -> "qwen2.5:14b"
-         "gpt-4o"                   -> "gpt-4o"
+    e.g. "anthropic/claude-sonnet-4-20250514" -> "claude-sonnet-4-20250514"
+         "gemini/gemini-2.0-flash"            -> "gemini-2.0-flash"
+         "ollama/qwen2.5:14b"                 -> "qwen2.5:14b"
+         "gpt-4o"                             -> "gpt-4o"
     """
     model = settings.llm_model
     for prefix in _PROVIDER_BASE_URLS:

@@ -291,16 +291,16 @@ LLM_BASE_URL=https://my-resource.openai.azure.com/
 LLM_API_VERSION=2024-02-01
 ```
 
-### Anthropic Claude (via OpenRouter or proxy)
+### Anthropic Claude
 
-Claude doesn't natively expose an OpenAI-compatible API. Use [OpenRouter](https://openrouter.ai/) or a proxy:
+Anthropic provides a native [OpenAI-compatible endpoint](https://docs.anthropic.com/en/api/openai-sdk). The `anthropic/` prefix auto-routes to the correct base URL.
 
 ```env
-# Via OpenRouter
 LLM_MODEL=anthropic/claude-sonnet-4-20250514
-LLM_API_KEY=sk-or-...
-LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_API_KEY=sk-ant-...
 ```
+
+Other Claude models: `anthropic/claude-opus-4-6`, `anthropic/claude-haiku-4-5-20251001`.
 
 ### Any OpenAI-compatible endpoint
 
