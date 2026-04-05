@@ -4,6 +4,7 @@ Unified LLM client using the OpenAI SDK.
 Supports any OpenAI-compatible provider by configuring base_url:
   - OpenAI:    (default base_url — no prefix needed)
   - Anthropic: https://api.anthropic.com/v1/  (prefix: anthropic/)
+  - Cohere:    https://api.cohere.ai/compatibility/v1  (prefix: cohere/)
   - Gemini:    https://generativelanguage.googleapis.com/v1beta/openai/  (prefix: gemini/)
   - Ollama:    http://localhost:11434/v1  (prefix: ollama/)
   - Azure:     LLM_BASE_URL=https://<resource>.openai.azure.com/
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_BASE_URLS: dict[str, str] = {
     "anthropic": "https://api.anthropic.com/v1/",
+    "cohere": "https://api.cohere.ai/compatibility/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "ollama": "http://localhost:11434/v1",
 }

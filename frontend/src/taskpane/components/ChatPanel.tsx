@@ -1,33 +1,27 @@
 /**
- * ChatPanel – Main chat interface. Microsoft Copilot for Excel style.
+ * ChatPanel – Main chat interface.
+ *
+ * Execution timelines are scoped per-message: when the user runs a plan, the
+ * resulting ExecutionState and progress log are attached to the assistant
+ * message that produced that plan, so switching chats (or opening an older
+ * conversation, in the future) naturally brings the timeline with it.
  */
 
 import React, { useRef, useEffect, useCallback, useState } from "react";
+import { Add16Regular, History16Regular } from "@fluentui/react-icons";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { PlanPreview } from "./PlanPreview";
 import { PlanOptionsPanel } from "./PlanOptionsPanel";
-import { ExecutionTimeline } from "./ExecutionTimeline";
 import { SuggestedPrompts } from "./SuggestedPrompts";
+import { HistoryDrawer } from "./HistoryDrawer";
 import { useChat } from "../hooks/useChat";
 import { useSelectionTracker } from "../hooks/useSelectionTracker";
 import { usePlanExecution } from "../hooks/usePlanExecution";
-import { sendFeedback, listPresets, savePreset, deletePreset, renamePreset, Preset } from "../../services/api";
-
-// Copilot logo SVG
-const CopilotLogo = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="20" height="20" rx="4" fill="url(#logo-grad)" />
-    <defs>
-      <linearGradient id="logo-grad" x1="0" y1="0" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#7719aa" />
-        <stop offset="0.5" stopColor="#2764e7" />
-        <stop offset="1" stopColor="#38b6ff" />
-      </linearGradient>
-    </defs>
-    <path d="M10 3.5l1.4 4.2H15l-3.2 2.3 1.2 3.8L10 11.5l-3 2.3 1.2-3.8L5 7.7h3.6L10 3.5z" fill="white"/>
-  </svg>
-);
+import {
+  sendFeedback, listPresets, savePreset, deletePreset, renamePreset, Preset,
+  patchMessageExecution,
+} from "../../services/api";
 
 export const ChatPanel: React.FC = () => {
   const chat = useChat();
@@ -35,17 +29,26 @@ export const ChatPanel: React.FC = () => {
   const execution = usePlanExecution();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Stable refs so effects don't need the whole `chat` object in their dep array
+  const updateMessageRef = useRef(chat.updateMessage);
+  updateMessageRef.current = chat.updateMessage;
+  const conversationIdRef = useRef(chat.conversationId);
+  conversationIdRef.current = chat.conversationId;
+
   // Track the last executed plan ID so undo works after execution completes
   const [lastExecutedPlanId, setLastExecutedPlanId] = useState<string | null>(null);
+  // Track which assistant message owns the currently-running timeline
+  const [activeTimelineMsgId, setActiveTimelineMsgId] = useState<string | null>(null);
+  // Tracks the last status we already sent to the backend, to prevent duplicate PATCHes
+  const patchedStatusRef = useRef<string | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
-  // When undo is triggered, prefill the input with the rolled-back user message.
-  // The counter ensures repeated undos of the same text still trigger the effect.
   const [undoPrefill, setUndoPrefill] = useState<{ text: string; seq: number }>({ text: "", seq: 0 });
-  // Save-preset naming mode
   const [savePresetMode, setSavePresetMode] = useState(false);
   const [savePresetName, setSavePresetName] = useState("");
   const [saveToast, setSaveToast] = useState("");
-  // Track which option tab is active — reset when options change
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Active option index — reset when options change
   const optionsKey = chat.currentOptions?.map((o) => o.plan.planId).join(",") ?? "";
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
   const prevOptionsKey = useRef(optionsKey);
@@ -54,32 +57,58 @@ export const ChatPanel: React.FC = () => {
     if (activeOptionIndex !== 0) setActiveOptionIndex(0);
   }
 
-  // The currently selected plan (from options or single plan)
   const activePlan = chat.currentOptions?.[activeOptionIndex]?.plan ?? chat.currentPlan;
   const hasOptions = (chat.currentOptions?.length ?? 0) > 0;
-
-  // Only show suggested prompts if only the welcome system message is present
   const showSuggested = chat.messages.length <= 1 && !chat.isLoading;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat.messages, chat.streamingText, execution.executionState]);
+  }, [chat.messages]);
+
+  // Sync live execution state onto the active message so the timeline renders
+  // inline with the assistant bubble that proposed the plan.
+  useEffect(() => {
+    if (!activeTimelineMsgId || !execution.executionState) return;
+
+    updateMessageRef.current(activeTimelineMsgId, {
+      execution: execution.executionState,
+      progressLog: execution.progressLog,
+    });
+
+    // Only PATCH the backend once per terminal state (completed/failed/rolledBack).
+    const status = execution.executionState.status;
+    const isTerminal = status === "completed" || status === "failed" || status === "rolledBack";
+    const convId = conversationIdRef.current;
+    if (isTerminal && convId && patchedStatusRef.current !== `${activeTimelineMsgId}:${status}`) {
+      patchedStatusRef.current = `${activeTimelineMsgId}:${status}`;
+      void patchMessageExecution(
+        convId,
+        activeTimelineMsgId,
+        execution.executionState,
+        execution.progressLog,
+      );
+    }
+  }, [execution.executionState, execution.progressLog, activeTimelineMsgId]);
 
   const handleRun = async () => {
-    if (activePlan) {
-      setLastExecutedPlanId(activePlan.planId);
-      await execution.runPlan(activePlan);
-      // Record feedback (fire-and-forget)
-      if (chat.interactionId) {
-        sendFeedback(chat.interactionId, activePlan.planId, "applied");
-      }
-      chat.setCurrentPlan(null);
-      chat.setCurrentOptions(null);
-    }
+    if (!activePlan) return;
+    // Bind the upcoming execution to the assistant message that carries this plan
+    const msgId = chat.getLatestPlanMessageId();
+    setActiveTimelineMsgId(msgId);
+    patchedStatusRef.current = null;
+    setLastExecutedPlanId(activePlan.planId);
+    await execution.runPlan(activePlan);
+    if (chat.interactionId) sendFeedback(chat.interactionId, activePlan.planId, "applied");
+    chat.setCurrentPlan(null);
+    chat.setCurrentOptions(null);
   };
 
   const handlePreview = async () => {
-    if (activePlan) await execution.previewPlan(activePlan);
+    if (!activePlan) return;
+    const msgId = chat.getLatestPlanMessageId();
+    setActiveTimelineMsgId(msgId);
+    patchedStatusRef.current = null;
+    await execution.previewPlan(activePlan);
   };
 
   const handleUndo = async () => {
@@ -87,24 +116,19 @@ export const ChatPanel: React.FC = () => {
     chat.setCurrentPlan(null);
     chat.setCurrentOptions(null);
     setLastExecutedPlanId(null);
-    if (planId) {
-      await execution.undoLast(planId);
-    }
-    // Remove the last user+assistant exchange and prefill the input with the rolled-back message
+    if (planId) await execution.undoLast(planId);
     const removedText = chat.removeLastExchange();
-    if (removedText) {
-      setUndoPrefill((prev) => ({ text: removedText, seq: prev.seq + 1 }));
-    }
+    if (removedText) setUndoPrefill((prev) => ({ text: removedText, seq: prev.seq + 1 }));
+    setActiveTimelineMsgId(null);
+    execution.reset();
   };
 
   const handleCancel = () => {
-    // Record dismiss feedback (fire-and-forget)
-    if (chat.interactionId) {
-      sendFeedback(chat.interactionId, null, "dismissed");
-    }
+    if (chat.interactionId) sendFeedback(chat.interactionId, null, "dismissed");
     chat.setCurrentPlan(null);
     chat.setCurrentOptions(null);
     setLastExecutedPlanId(null);
+    setActiveTimelineMsgId(null);
     execution.reset();
   };
 
@@ -112,13 +136,16 @@ export const ChatPanel: React.FC = () => {
     await chat.sendMessage(text, rangeTokens);
   }, [chat]);
 
-  // Load presets on mount
-  useEffect(() => {
-    listPresets().then(setPresets);
-  }, []);
+  const handleNewChat = useCallback(() => {
+    chat.clearHistory();
+    setLastExecutedPlanId(null);
+    setActiveTimelineMsgId(null);
+    execution.reset();
+  }, [chat, execution]);
+
+  useEffect(() => { listPresets().then(setPresets); }, []);
 
   const handleSavePresetClick = useCallback(() => {
-    // Check there's a plan to save before entering naming mode
     const lastPlanMsg = [...chat.messages].reverse().find(m => m.role === "assistant" && m.plan);
     if (!lastPlanMsg) return;
     setSavePresetName("");
@@ -128,13 +155,10 @@ export const ChatPanel: React.FC = () => {
   const handleSavePresetConfirm = useCallback(() => {
     const name = savePresetName.trim();
     if (!name) return;
-
     const lastPlanMsg = [...chat.messages].reverse().find(m => m.role === "assistant" && m.plan);
     if (!lastPlanMsg) return;
-
     const msgIndex = chat.messages.indexOf(lastPlanMsg);
     const userMsg = chat.messages.slice(0, msgIndex).reverse().find(m => m.role === "user");
-
     savePreset(
       name,
       userMsg?.content ?? "",
@@ -150,94 +174,50 @@ export const ChatPanel: React.FC = () => {
   const handleDeletePreset = useCallback((presetId: string) => {
     deletePreset(presetId).then(() => listPresets().then(setPresets));
   }, []);
-
   const handleRenamePreset = useCallback((presetId: string, newName: string) => {
     renamePreset(presetId, newName).then(() => listPresets().then(setPresets));
   }, []);
-
-  const handleSuggestedPrompt = (prompt: string) => {
-    handleSend(prompt, []);
-  };
+  const handleSuggestedPrompt = (prompt: string) => { handleSend(prompt, []); };
 
   return (
-    <div dir="auto" style={{
-      display: "flex", flexDirection: "column", height: "100vh",
-      backgroundColor: "#fafafa",
-      fontFamily: '"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif',
-    }}>
-      {/* Global animations */}
-      <style>{`
-        @keyframes bounce {
-          0%, 80%, 100% { transform: translateY(0); }
-          40% { transform: translateY(-4px); }
-        }
-        @keyframes fadeSlideIn {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        .chat-message-enter { animation: fadeSlideIn 0.25s ease-out; }
-        .chat-scroll::-webkit-scrollbar { width: 4px; }
-        .chat-scroll::-webkit-scrollbar-thumb { background: #d1d1d1; border-radius: 4px; }
-        .chat-scroll::-webkit-scrollbar-thumb:hover { background: #a1a1a1; }
-        .chat-scroll::-webkit-scrollbar-track { background: transparent; }
-      `}</style>
+    <div dir="auto" className="cc-app">
       {/* Header */}
-      <div style={{
-        padding: "12px 16px",
-        background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
-        borderBottom: "1px solid #e8e8e8",
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        flexShrink: 0,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <CopilotLogo />
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "#242424", lineHeight: 1.2 }}>Copilot</div>
-            <div style={{ fontSize: 10, color: "#616161" }}>Excel AI Assistant</div>
+      <div className="cc-header">
+        <div className="cc-header-brand">
+          <div className="cc-header-logo" aria-hidden="true">
+            {/* Spreadsheet grid icon */}
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="1" width="6" height="6" rx="1" fill="white" fillOpacity="0.9"/>
+              <rect x="9" y="1" width="6" height="6" rx="1" fill="white" fillOpacity="0.6"/>
+              <rect x="1" y="9" width="6" height="6" rx="1" fill="white" fillOpacity="0.6"/>
+              <rect x="9" y="9" width="6" height="6" rx="1" fill="white" fillOpacity="0.9"/>
+            </svg>
           </div>
+          <div className="cc-header-title">Copilot</div>
         </div>
-        <button
-          onClick={chat.clearHistory}
-          style={{
-            background: "none", border: "1px solid #e8e8e8",
-            borderRadius: 6, color: "#616161",
-            padding: "4px 10px", fontSize: 12, cursor: "pointer",
-          }}
-        >
-          New chat
-        </button>
+        <div className="cc-header-actions">
+          <button
+            className="cc-btn ghost icon sm"
+            title="History"
+            aria-label="Open chat history"
+            onClick={() => setHistoryOpen(true)}
+          >
+            <History16Regular />
+          </button>
+          <button className="cc-btn ghost" onClick={handleNewChat} title="Start a new chat">
+            <Add16Regular /> New chat
+          </button>
+        </div>
       </div>
 
-      {/* Messages area */}
-      <div className="chat-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 12px 0", scrollBehavior: "smooth" }}>
+      {/* Messages */}
+      <div className="cc-messages">
         {chat.messages.map((msg) => (
-          <div key={msg.id} className="chat-message-enter">
-            <MessageBubble message={msg} />
-          </div>
+          <MessageBubble key={msg.id} message={msg} />
         ))}
 
-        {/* Streaming text */}
-        {chat.streamingText && (
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 16 }}>
-            <div style={{
-              padding: "12px 16px", backgroundColor: "#ffffff",
-              borderRadius: "4px 18px 18px 18px", border: "1px solid #e8e8e8",
-              fontSize: 13, color: "#616161", fontStyle: "italic",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-            }}>
-              {chat.streamingText}
-              <span style={{ opacity: 0.6 }}>▋</span>
-            </div>
-          </div>
-        )}
-
-        {/* Plan card — multi-option or single */}
         {hasOptions && chat.currentOptions && (
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 14 }}>
             <PlanOptionsPanel
               options={chat.currentOptions}
               validation={execution.validationResult}
@@ -254,7 +234,7 @@ export const ChatPanel: React.FC = () => {
           </div>
         )}
         {!hasOptions && chat.currentPlan && (
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 14 }}>
             <PlanPreview
               plan={chat.currentPlan}
               validation={execution.validationResult}
@@ -269,109 +249,72 @@ export const ChatPanel: React.FC = () => {
           </div>
         )}
 
-        {/* Execution timeline */}
-        {execution.executionState && (
-          <div style={{ marginBottom: 16 }}>
-            <ExecutionTimeline
-              state={execution.executionState}
-              progressLog={execution.progressLog}
-            />
-          </div>
-        )}
-
-        {/* Error */}
         {(execution.lastError || chat.error) && (
-          <div dir="auto" style={{
-            padding: "10px 14px", backgroundColor: "#fdf3f3",
-            borderRadius: 8, border: "1px solid #fcd6d6",
-            color: "#c50f1f", fontSize: 12, marginBottom: 16,
-          }}>
-            {execution.lastError || chat.error}
-          </div>
+          <div dir="auto" className="cc-error">{execution.lastError || chat.error}</div>
         )}
 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Suggested prompts (shown only for fresh chat) */}
-      {showSuggested && (
-        <SuggestedPrompts onSelect={handleSuggestedPrompt} />
-      )}
+      {showSuggested && <SuggestedPrompts onSelect={handleSuggestedPrompt} />}
 
-      {/* Thinking indicator (stop button is now in the input toolbar) */}
       {chat.isLoading && (
-        <div style={{
-          padding: "6px 16px", display: "flex", alignItems: "center", gap: 8,
-          fontSize: 12, color: "#616161",
-        }}>
-          <div style={{ display: "flex", gap: 3 }}>
-            {[0, 1, 2].map((i) => (
-              <div key={i} style={{
-                width: 6, height: 6, borderRadius: "50%",
-                backgroundColor: "#5b5fc7",
-                animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
-              }} />
-            ))}
+        <div className="cc-thinking">
+          <div className="cc-thinking-dots">
+            <div className="cc-thinking-dot" />
+            <div className="cc-thinking-dot" />
+            <div className="cc-thinking-dot" />
           </div>
           Copilot is thinking…
         </div>
       )}
 
-      {/* Save preset naming bar */}
       {savePresetMode && (
-        <div style={{
-          display: "flex", alignItems: "center", gap: 6,
-          padding: "8px 12px", borderTop: "1px solid #e8e8e8", backgroundColor: "#f8f9ff",
-        }}>
-          <input
-            autoFocus
-            value={savePresetName}
-            onChange={(e) => setSavePresetName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleSavePresetConfirm();
-              if (e.key === "Escape") setSavePresetMode(false);
-            }}
-            placeholder="Preset name..."
-            style={{
-              flex: 1, fontSize: 12, padding: "4px 8px",
-              border: "1px solid #d1d1d1", borderRadius: 4, outline: "none",
-            }}
-          />
-          <button
-            onClick={handleSavePresetConfirm}
-            disabled={!savePresetName.trim()}
-            style={{
-              fontSize: 11, padding: "4px 10px", borderRadius: 4, border: "none",
-              backgroundColor: savePresetName.trim() ? "#0f6cbd" : "#c8c6c4",
-              color: "#fff", fontWeight: 600, cursor: savePresetName.trim() ? "pointer" : "default",
-            }}
-          >
-            Save
-          </button>
-          <button
-            onClick={() => setSavePresetMode(false)}
-            style={{
-              fontSize: 11, padding: "4px 8px", borderRadius: 4,
-              border: "1px solid #d1d1d1", backgroundColor: "#fff", cursor: "pointer",
-            }}
-          >
-            Cancel
-          </button>
-        </div>
+        <>
+          <div className="cc-modal-backdrop" onClick={() => setSavePresetMode(false)} />
+          <div className="cc-modal" role="dialog" aria-label="Save preset">
+            <div className="cc-modal-title">Save as preset</div>
+            <input
+              className="cc-modal-input"
+              autoFocus
+              value={savePresetName}
+              onChange={(e) => setSavePresetName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSavePresetConfirm();
+                if (e.key === "Escape") setSavePresetMode(false);
+              }}
+              placeholder="Preset name…"
+            />
+            <div className="cc-modal-actions">
+              <button className="cc-btn" onClick={() => setSavePresetMode(false)}>Cancel</button>
+              <button className="cc-btn primary" onClick={handleSavePresetConfirm} disabled={!savePresetName.trim()}>
+                Save
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
-      {/* Save toast */}
-      {saveToast && (
-        <div style={{
-          padding: "6px 12px", backgroundColor: "#dff6dd", color: "#107c10",
-          fontSize: 12, fontWeight: 500, textAlign: "center",
-          animation: "fadeIn 0.2s ease-out",
-        }}>
-          {saveToast}
-        </div>
-      )}
+      {saveToast && <div className="cc-toast">{saveToast}</div>}
 
-      {/* Chat input */}
+      <HistoryDrawer
+        open={historyOpen}
+        activeConversationId={chat.conversationId}
+        onClose={() => setHistoryOpen(false)}
+        onSelect={(id) => {
+          setLastExecutedPlanId(null);
+          setActiveTimelineMsgId(null);
+          execution.reset();
+          void chat.loadConversation(id);
+        }}
+        onActiveDeleted={() => {
+          setLastExecutedPlanId(null);
+          setActiveTimelineMsgId(null);
+          execution.reset();
+          chat.clearHistory();
+        }}
+      />
+
       <ChatInput
         onSend={handleSend}
         onStop={chat.stopMessage}

@@ -16,6 +16,8 @@ export interface ChatRequest {
   usedRangeEnd?: string;   // e.g. "C15" — last used cell on the active sheet
   locale?: string;         // e.g. "he-IL" — user's locale for date/number formatting
   conversationHistory?: { role: string; content: string }[];
+  conversationId?: string;
+  userMessageId?: string;
 }
 
 export interface ChatResponse {
@@ -24,6 +26,8 @@ export interface ChatResponse {
   plan?: ExecutionPlan;
   plans?: PlanOption[];
   interactionId?: string;
+  conversationId?: string;
+  assistantMessageId?: string;
 }
 
 // Empty base — all /api calls go through the webpack dev-server proxy
@@ -141,6 +145,92 @@ export async function sendFeedback(
     });
   } catch {
     // Fire-and-forget: feedback logging should never disrupt UX
+  }
+}
+
+// ── Conversations (server-persisted chat history) ───────────────────────────
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+export interface PersistedMessage {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: string;
+  rangeTokens?: { address: string; sheetName: string }[] | null;
+  plan?: ExecutionPlan | null;
+  execution?: unknown;
+  progressLog?: { stepId: string; message: string; timestamp: string }[] | null;
+}
+
+export interface ConversationDetail {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: PersistedMessage[];
+}
+
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const res = await fetch(`${BASE_URL}/api/conversations`);
+  if (!res.ok) throw new Error(`listConversations failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getConversation(id: string): Promise<ConversationDetail> {
+  const res = await fetch(`${BASE_URL}/api/conversations/${id}`);
+  if (!res.ok) throw new Error(`getConversation failed: ${res.status}`);
+  return res.json();
+}
+
+export async function renameConversation(id: string, title: string): Promise<ConversationSummary> {
+  const res = await fetch(`${BASE_URL}/api/conversations/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(`renameConversation failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/conversations/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`deleteConversation failed: ${res.status}`);
+}
+
+export async function patchMessageExecution(
+  conversationId: string,
+  messageId: string,
+  execution: unknown,
+  progressLog: unknown,
+): Promise<void> {
+  try {
+    await fetch(`${BASE_URL}/api/conversations/${conversationId}/messages/${messageId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ execution, progressLog }),
+    });
+  } catch {
+    // fire-and-forget
+  }
+}
+
+export async function popLastExchange(conversationId: string): Promise<number> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/last`, {
+      method: "DELETE",
+    });
+    if (!res.ok) return 0;
+    const body = await res.json();
+    return body.removed ?? 0;
+  } catch {
+    return 0;
   }
 }
 

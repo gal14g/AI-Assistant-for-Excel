@@ -1,6 +1,8 @@
 # Excel AI Copilot
 
-A Microsoft Excel Office Add-in that lets you control your spreadsheet with natural language. Powered by any OpenAI-compatible LLM provider (OpenAI, Google Gemini, Azure, Ollama, and more).
+A Microsoft Excel Office Add-in that lets you control your spreadsheet with natural language. Powered by any OpenAI-compatible LLM provider (OpenAI, Google Gemini, Anthropic Claude, Cohere, Azure, Ollama, and more).
+
+Works on **macOS, Windows, and Linux**. Runs fully offline when paired with a local model (Ollama) — the embedding model is bundled in the repo, no runtime downloads required.
 
 ---
 
@@ -12,12 +14,14 @@ A Microsoft Excel Office Add-in that lets you control your spreadsheet with natu
 4. [Local development](#local-development)
 5. [Making changes](#making-changes)
 6. [Switching LLM providers](#switching-llm-providers)
-7. [Deploy to OpenShift](#deploy-to-openshift)
-8. [Installing the add-in in Excel](#installing-the-add-in-in-excel)
-9. [CI/CD pipeline](#cicd-pipeline)
-10. [Security](#security)
-11. [Migrating to a production database](#migrating-to-a-production-database)
-12. [Configuration reference](#configuration-reference)
+7. [Running on Windows](#running-on-windows)
+8. [Running fully offline (air-gapped networks)](#running-fully-offline-air-gapped-networks)
+9. [Deploy to OpenShift](#deploy-to-openshift)
+10. [Installing the add-in in Excel](#installing-the-add-in-in-excel)
+11. [CI/CD pipeline](#cicd-pipeline)
+12. [Security](#security)
+13. [Migrating to a production database](#migrating-to-a-production-database)
+14. [Configuration reference](#configuration-reference)
 
 ---
 
@@ -32,6 +36,7 @@ A Microsoft Excel Office Add-in that lets you control your spreadsheet with natu
 - **Self-improving**: every plan you approve is stored and used as a few-shot example for future queries via vector similarity search (ChromaDB + sentence-transformers)
 - All interactions are logged to a local feedback database for analysis and fine-tuning
 - Hebrew and English support with full RTL
+- Modern chat UI with Fluent UI icons, per-message execution timelines, and integrated command input
 
 ---
 
@@ -180,7 +185,7 @@ uvicorn main:app --reload --port 8000
 ```
 
 On first startup, the backend will:
-1. Download the `all-MiniLM-L6-v2` embedding model (~80MB, cached after first time)
+1. Load the `all-MiniLM-L6-v2` embedding model from `backend/models/` (bundled in the repo, ~87MB — no network call required)
 2. Index all 34 capabilities into ChromaDB (~2 seconds)
 3. Seed curated few-shot examples into the example store
 4. Create the SQLite feedback database
@@ -302,6 +307,18 @@ LLM_API_KEY=sk-ant-...
 
 Other Claude models: `anthropic/claude-opus-4-6`, `anthropic/claude-haiku-4-5-20251001`.
 
+### Cohere
+
+Cohere provides an [OpenAI-compatible endpoint](https://docs.cohere.com/docs/compatibility-api). The `cohere/` prefix auto-routes to the correct base URL.
+
+```env
+LLM_MODEL=cohere/command-r-plus
+LLM_API_KEY=your-cohere-key
+LLM_JSON_MODE=true
+```
+
+Other Cohere models: `cohere/command-r`, `cohere/command-a-03-2025`.
+
 ### Any OpenAI-compatible endpoint
 
 ```env
@@ -313,6 +330,32 @@ LLM_API_KEY=key-if-required
 ### Switching at runtime
 
 Change the values in `.env` and restart the backend. No code changes needed. No rebuild needed.
+
+---
+
+## Running on Windows
+
+The project is fully cross-platform — all path handling uses `pathlib`, no Unix-only syscalls. The only differences from the macOS/Linux instructions are shell-specific:
+
+| Task | macOS / Linux | Windows (PowerShell) |
+|---|---|---|
+| Activate venv | `source venv/bin/activate` | `.\venv\Scripts\Activate.ps1` |
+| Activate venv (cmd) | — | `venv\Scripts\activate.bat` |
+| Set env var | `export FOO=bar` | `$env:FOO = "bar"` |
+
+Everything else (`uvicorn main:app --reload`, `npm run dev`, `docker build`, etc.) is identical.
+
+---
+
+## Running fully offline (air-gapped networks)
+
+The project is designed to work on enclosed networks with zero outbound internet access:
+
+1. **LLM**: Use Ollama with a local model — `LLM_MODEL=ollama/qwen2.5:14b`, `LLM_BASE_URL=http://localhost:11434`.
+2. **Embeddings**: The `all-MiniLM-L6-v2` model is **pre-downloaded into `backend/models/`** and committed to the repo. The app auto-detects and loads from disk on startup — no Hugging Face Hub call.
+3. **Office.js**: Excel loads `https://appsforoffice.microsoft.com/lib/1/hosted/office.js` from Microsoft's CDN. On truly air-gapped networks, host a mirror internally and update `<script src="…">` in `frontend/src/taskpane/taskpane.html`.
+
+See [Switching LLM providers → Ollama](#ollama-free-local-no-api-key) for the local-model setup.
 
 ---
 

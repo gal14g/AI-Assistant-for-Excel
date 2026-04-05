@@ -23,6 +23,10 @@ class ChatRequest(BaseModel):
     usedRangeEnd: Optional[str] = Field(None, max_length=20)
     locale: Optional[str] = Field(None, max_length=10)
     conversationHistory: Optional[list[ConversationMessage]] = Field(None, max_length=20)
+    # Persisted-conversation plumbing. All optional: when omitted a new
+    # conversation is created server-side and returned in the response.
+    conversationId: Optional[str] = Field(None, max_length=64)
+    userMessageId: Optional[str] = Field(None, max_length=64)
 
 
 class PlanOption(BaseModel):
@@ -36,3 +40,5 @@ class ChatResponse(BaseModel):
     plan: Optional[ExecutionPlan] = None           # single plan (backward compat)
     plans: Optional[list[PlanOption]] = None        # multiple options
     interactionId: Optional[str] = None             # DB interaction ID for feedback
+    conversationId: Optional[str] = None            # Persistent conversation id
+    assistantMessageId: Optional[str] = None        # ID of the stored assistant message

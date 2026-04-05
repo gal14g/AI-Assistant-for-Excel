@@ -51,7 +51,19 @@ export type StepAction =
   | "insertPicture"
   | "insertShape"
   | "insertTextBox"
-  | "addSlicer";
+  | "addSlicer"
+  | "splitColumn"
+  | "unpivot"
+  | "crossTabulate"
+  | "bulkFormula"
+  | "compareSheets"
+  | "consolidateRanges"
+  | "extractPattern"
+  | "categorize"
+  | "fillBlanks"
+  | "subtotals"
+  | "transpose"
+  | "namedRange";
 
 // ---------------------------------------------------------------------------
 // Step parameter shapes – one per action
@@ -81,7 +93,7 @@ export interface MatchRecordsParams {
   lookupRange: string; // range containing lookup keys
   sourceRange: string; // range to search in (key column)
   returnColumns?: number[]; // 1-based column offsets to return (default [1]); not required when writeValue is set
-  matchType: "exact" | "approximate";
+  matchType: "exact" | "approximate" | "contains";
   outputRange: string; // where to write results
   /** Prefer native VLOOKUP/XLOOKUP formulas over computed values */
   preferFormula?: boolean;
@@ -421,6 +433,155 @@ export interface AddSlicerParams {
   height?: number;
 }
 
+export interface SplitColumnParams {
+  /** Source column range, e.g. "A:A" or "Sheet1!A1:A100" */
+  sourceRange: string;
+  /** Delimiter to split on. Use "fixed" for fixed-width splitting. */
+  delimiter: string;
+  /** Sheet column letter where the first output column is written */
+  outputStartColumn: string;
+  /** Optional header row label(s) for the new columns */
+  outputHeaders?: string[];
+  /** How many parts to split into (default 2) */
+  parts?: number;
+}
+
+export interface UnpivotParams {
+  /** Range including headers, e.g. "Sheet1!A1:E20" */
+  sourceRange: string;
+  /** Number of columns at the left to keep as ID columns (default 1) */
+  idColumns: number;
+  /** Sheet or cell where the unpivoted table starts */
+  outputRange: string;
+  /** Header label for the "variable" column (default "Attribute") */
+  variableColumnName?: string;
+  /** Header label for the "value" column (default "Value") */
+  valueColumnName?: string;
+}
+
+export interface CrossTabulateParams {
+  /** Range of raw data including headers */
+  sourceRange: string;
+  /** 1-based column index for rows of the output matrix */
+  rowField: number;
+  /** 1-based column index for columns of the output matrix */
+  columnField: number;
+  /** 1-based column index for values to aggregate */
+  valueField: number;
+  /** Aggregation function (default "count") */
+  aggregation: "count" | "sum" | "average";
+  /** Where to write the cross-tab matrix */
+  outputRange: string;
+}
+
+export interface BulkFormulaParams {
+  /** Formula template for the first data row, e.g. "=A2*B2" */
+  formula: string;
+  /** Output column range, e.g. "C:C" or "Sheet1!C2:C200" */
+  outputRange: string;
+  /** Range that defines how many rows to fill (used to detect last row) */
+  dataRange: string;
+  /** Whether to include a header row (skips row 1 of output, default true) */
+  hasHeaders?: boolean;
+}
+
+export interface CompareSheetsParams {
+  /** First range/sheet to compare */
+  rangeA: string;
+  /** Second range/sheet to compare */
+  rangeB: string;
+  /** Where to write the diff report (new sheet created if omitted) */
+  outputRange?: string;
+  /** Highlight differences in-place on rangeA (default false) */
+  highlightDiffs?: boolean;
+  /** Background color for highlighting (default "#FFD966" yellow) */
+  highlightColor?: string;
+}
+
+export interface ConsolidateRangesParams {
+  /** Array of source range addresses to merge */
+  sourceRanges: string[];
+  /** Where to write the consolidated data */
+  outputRange: string;
+  /** Stack vertically (default) or join horizontally */
+  direction?: "vertical" | "horizontal";
+  /** Include a source-label column showing which range each row came from */
+  addSourceLabel?: boolean;
+  /** Whether to de-duplicate rows after consolidating */
+  deduplicate?: boolean;
+}
+
+export interface ExtractPatternParams {
+  /** Source range of text cells */
+  sourceRange: string;
+  /** Built-in pattern name or a custom regex string */
+  pattern: "email" | "phone" | "url" | "date" | "number" | "currency" | string;
+  /** Where to write extracted values */
+  outputRange: string;
+  /** If true, extract ALL matches per cell (comma-joined); default first match only */
+  allMatches?: boolean;
+}
+
+export interface CategorizeParams {
+  /** Source range to categorize */
+  sourceRange: string;
+  /** Where to write category labels */
+  outputRange: string;
+  /** Ordered list of rules; first match wins */
+  rules: CategorizeRule[];
+  /** Value to write when no rule matches (default "") */
+  defaultValue?: string;
+}
+
+export interface CategorizeRule {
+  /** "contains" | "equals" | "startsWith" | "endsWith" | "greaterThan" | "lessThan" | "regex" */
+  operator: "contains" | "equals" | "startsWith" | "endsWith" | "greaterThan" | "lessThan" | "regex";
+  value: string | number;
+  label: string;
+}
+
+export interface FillBlanksParams {
+  /** Range in which to fill blank cells */
+  range: string;
+  /** "down" = copy value from the cell above (default), "up", "constant" */
+  fillMode?: "down" | "up" | "constant";
+  /** Value to fill when fillMode = "constant" */
+  constantValue?: string | number;
+}
+
+export interface SubtotalsParams {
+  /** Data range including headers */
+  dataRange: string;
+  /** 1-based column index to group by */
+  groupByColumn: number;
+  /** Columns to subtotal (1-based) */
+  subtotalColumns: number[];
+  /** Aggregation function (default "sum") */
+  aggregation?: "sum" | "count" | "average";
+  /** Label to append to each subtotal row (default "Total") */
+  subtotalLabel?: string;
+}
+
+export interface TransposeParams {
+  /** Source range */
+  sourceRange: string;
+  /** Where to write the transposed data */
+  outputRange: string;
+  /** Copy formatting too (default false — values only) */
+  copyFormatting?: boolean;
+}
+
+export interface NamedRangeParams {
+  /** Operation: create / update / delete */
+  operation: "create" | "update" | "delete";
+  /** Name for the range */
+  name: string;
+  /** Range address (required for create/update) */
+  range?: string;
+  /** Scope sheet name (default = workbook-level) */
+  sheetName?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Union of all param types
 // ---------------------------------------------------------------------------
@@ -460,7 +621,19 @@ export type StepParams =
   | InsertPictureParams
   | InsertShapeParams
   | InsertTextBoxParams
-  | AddSlicerParams;
+  | AddSlicerParams
+  | SplitColumnParams
+  | UnpivotParams
+  | CrossTabulateParams
+  | BulkFormulaParams
+  | CompareSheetsParams
+  | ConsolidateRangesParams
+  | ExtractPatternParams
+  | CategorizeParams
+  | FillBlanksParams
+  | SubtotalsParams
+  | TransposeParams
+  | NamedRangeParams;
 
 // ---------------------------------------------------------------------------
 // Plan step
@@ -579,6 +752,8 @@ export interface ChatMessage {
   plan?: ExecutionPlan;
   /** Execution state, if any */
   execution?: ExecutionState;
+  /** Progress log from the plan execution, if any */
+  progressLog?: { stepId: string; message: string; timestamp: string }[];
   timestamp: string;
 }
 

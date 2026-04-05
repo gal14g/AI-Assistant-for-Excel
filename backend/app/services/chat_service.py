@@ -448,5 +448,51 @@ async def chat(request: ChatRequest) -> ChatResponse:
     latency_ms = int((time.monotonic() - start) * 1000)
     result.interactionId = interaction_id
     await _log_interaction_safe(interaction_id, request, result, latency_ms)
+    await _persist_conversation_turn(request, result)
 
     return result
+
+
+async def _persist_conversation_turn(request: ChatRequest, result: ChatResponse) -> None:
+    """
+    Append the user turn + assistant reply to the conversations store.
+    Creates a new conversation on the fly when conversationId is omitted.
+    Failures never break the chat flow.
+    """
+    import uuid as _uuid
+
+    try:
+        from ..db import append_conv_message, create_conversation
+
+        conv_id = request.conversationId
+        if not conv_id:
+            # Title from the first user message, trimmed.
+            title = request.userMessage.strip().splitlines()[0][:60] or "New chat"
+            conv_id = await create_conversation(title)
+
+        # Save the user message first
+        user_msg_id = request.userMessageId or str(_uuid.uuid4())
+        range_tokens = None
+        if request.rangeTokens:
+            range_tokens = [{"address": t.address, "sheetName": t.sheetName} for t in request.rangeTokens]
+        await append_conv_message(
+            conversation_id=conv_id, message_id=user_msg_id, role="user",
+            content=request.userMessage, range_tokens=range_tokens,
+        )
+
+        # Save the assistant message (may carry a plan)
+        assistant_msg_id = str(_uuid.uuid4())
+        plan_json: object | None = None
+        if result.plans and len(result.plans) > 0:
+            plan_json = result.plans[0].plan.model_dump(mode="json")
+        elif result.plan:
+            plan_json = result.plan.model_dump(mode="json")
+        await append_conv_message(
+            conversation_id=conv_id, message_id=assistant_msg_id, role="assistant",
+            content=result.message, plan=plan_json,
+        )
+
+        result.conversationId = conv_id
+        result.assistantMessageId = assistant_msg_id
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to persist conversation turn: %s", exc)

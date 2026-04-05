@@ -25,7 +25,7 @@ import {
   ExecutionOptions,
 } from "../types";
 import { registry } from "../capabilityRegistry";
-import { resolveRange, stripWorkbookQualifier, quoteSheetInRef } from "./rangeUtils";
+import { resolveRange, resolveSheet, stripWorkbookQualifier, quoteSheetInRef } from "./rangeUtils";
 
 const meta: CapabilityMeta = {
   action: "matchRecords",
@@ -280,23 +280,47 @@ async function compositeKeyMatch(
   options: ExecutionOptions
 ): Promise<StepResult> {
   const writeValue = params.writeValue ?? "match";
+  const isContains = params.matchType === "contains" || params.matchType === "approximate";
   options.onProgress?.("Reading ranges for composite match...");
 
-  const sourceRng = resolveRange(context, params.sourceRange);
-  const lookupRng = resolveRange(context, params.lookupRange);
-
-  // getUsedRange(false) returns the full bounding box including empty rows
-  // between data blocks — essential for sparse / gapped data.
+  // Resolve ranges then load via the worksheet's used range as a fallback.
+  // Calling getUsedRange(false) directly on whole-column refs like "B:B"
+  // throws "invalid argument" on some Office.js builds — we work around this
+  // by loading the worksheet's usedRange row count first and bounding manually.
   let sourceUsed: Excel.Range;
   let lookupUsed: Excel.Range;
   try {
+    const sourceSheet = resolveSheet(context, params.sourceRange);
+    const lookupSheet = resolveSheet(context, params.lookupRange);
+    const wsSourceUsed = sourceSheet.getUsedRange(false);
+    const wsLookupUsed = lookupSheet.getUsedRange(false);
+    wsSourceUsed.load("rowCount");
+    wsLookupUsed.load("rowCount");
+    await context.sync();
+
+    // Bound any full-column address to the worksheet's used row count so
+    // getUsedRange on the resulting range is guaranteed to succeed.
+    const boundAddr = (addr: string, maxRow: number): string => {
+      const stripped = stripWorkbookQualifier(addr);
+      const parts = stripped.includes("!") ? stripped.split("!") : ["", stripped];
+      const ref = parts[parts.length - 1];
+      // Full-column pattern: "B:B" or "A:C" (no digits)
+      if (/^[A-Z]+:[A-Z]+$/i.test(ref)) {
+        const prefix = parts.length > 1 ? parts[0] + "!" : "";
+        const cols = ref.split(":");
+        return `${prefix}${cols[0]}1:${cols[1]}${maxRow}`;
+      }
+      return addr;
+    };
+
+    const boundedSource = boundAddr(params.sourceRange, wsSourceUsed.rowCount);
+    const boundedLookup = boundAddr(params.lookupRange, wsLookupUsed.rowCount);
+
+    const sourceRng = resolveRange(context, boundedSource);
+    const lookupRng = resolveRange(context, boundedLookup);
     sourceUsed = sourceRng.getUsedRange(false);
     lookupUsed = lookupRng.getUsedRange(false);
     sourceUsed.load("values");
-    // Also load address so we know the ACTUAL start row of the bounding box.
-    // getUsedRange on a full-column ref like "A:B" starts at the first used row,
-    // which may be row 2 or 3 (e.g. when row 1 is a merged title in other columns).
-    // We must write output starting at that same row — not always row 1.
     lookupUsed.load("values, address");
     await context.sync();
   } catch (err: unknown) {
@@ -355,13 +379,25 @@ async function compositeKeyMatch(
   const { filled: filledSource } = fillDown(sourceVals);
   const { filled: filledLookup, wasEmpty: lookupWasEmpty } = fillDown(lookupVals);
 
-  // Build index from forward-filled source values
-  const sourceSet = new Set<string>();
+  // Build index from forward-filled source values (exact) or flat list (contains).
+  const sourceKeys = new Set<string>();
+  const sourceList: string[] = [];
   for (const row of filledSource) {
-    if (!isEmptyRow(row)) sourceSet.add(toKey(row));
+    if (!isEmptyRow(row)) {
+      const k = toKey(row);
+      sourceKeys.add(k);
+      if (isContains) sourceList.push(k);
+    }
   }
 
-  options.onProgress?.(`Matching ${filledLookup.length} rows against ${sourceSet.size} source keys...`);
+  // Matcher: exact set lookup, or contains check (lookup value substring-matches
+  // any source value, OR any source value is a substring of the lookup value).
+  const matches = isContains
+    ? (rowKey: string): boolean =>
+        sourceList.some((s) => s.includes(rowKey) || rowKey.includes(s))
+    : (rowKey: string): boolean => sourceKeys.has(rowKey);
+
+  options.onProgress?.(`Matching ${filledLookup.length} rows against ${sourceKeys.size} source keys (${isContains ? "contains" : "exact"})...`);
 
   // Resolve the output worksheet and column letter.
   // Strip any workbook qualifier and sheet-name quotes so getItem() works.
@@ -377,15 +413,13 @@ async function compositeKeyMatch(
     ? context.workbook.worksheets.getItem(outSheetName)
     : context.workbook.worksheets.getActiveWorksheet();
 
-  // Write "pass" (or writeValue) to the EXACT sheet row of each matched lookup
-  // row.  We do NOT write anything to non-matched rows so existing cell content
-  // is preserved and no alignment assumptions are needed.
-  // All property assignments are queued by Office.js and flushed in one sync.
+  // Write writeValue to the EXACT sheet row of each matched lookup row.
+  // Non-matched rows are left completely untouched.
   let matchCount = 0;
   for (let i = 0; i < filledLookup.length; i++) {
     const row = filledLookup[i];
     if (isEmptyRow(row) && lookupWasEmpty[i]) continue; // genuine leading gap — skip
-    if (sourceSet.has(toKey(row))) {
+    if (matches(toKey(row))) {
       const sheetRow = lookupStartRow + i;
       outWs.getRange(`${outCol}${sheetRow}`).values = [[writeValue]];
       matchCount++;

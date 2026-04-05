@@ -78,6 +78,29 @@ async def init_db() -> None:
             quality_score       REAL DEFAULT 1.0
         );
 
+        CREATE TABLE IF NOT EXISTS conversations (
+            id              TEXT PRIMARY KEY,
+            title           TEXT NOT NULL,
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS conv_messages (
+            id              TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            role            TEXT NOT NULL,
+            content         TEXT NOT NULL,
+            range_tokens_json   TEXT,
+            plan_json           TEXT,
+            execution_json      TEXT,
+            progress_log_json   TEXT,
+            created_at      TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_conv_messages_conv_id
+            ON conv_messages(conversation_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_conversations_updated
+            ON conversations(updated_at DESC);
     """)
     await _db.commit()
     logger.info("Feedback database ready at %s", db_path)
@@ -222,6 +245,200 @@ async def get_few_shot_examples_by_ids(ids: list[str]) -> list[dict]:
     # Return in the order of the input IDs for relevance ordering
     row_map = {r[0]: {"id": r[0], "user_message": r[1], "assistant_response": r[2]} for r in rows}
     return [row_map[i] for i in ids if i in row_map]
+
+
+# ── Conversations ────────────────────────────────────────────────────────────
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def create_conversation(title: str) -> str:
+    """Create a new conversation and return its id."""
+    if not _db:
+        raise RuntimeError("DB not initialised")
+    conv_id = str(uuid.uuid4())
+    now = _now_iso()
+    await _db.execute(
+        "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+        (conv_id, title[:120], now, now),
+    )
+    await _db.commit()
+    return conv_id
+
+
+async def touch_conversation(conversation_id: str) -> None:
+    if not _db:
+        return
+    await _db.execute(
+        "UPDATE conversations SET updated_at = ? WHERE id = ?",
+        (_now_iso(), conversation_id),
+    )
+    await _db.commit()
+
+
+async def rename_conversation(conversation_id: str, title: str) -> bool:
+    if not _db:
+        return False
+    cursor = await _db.execute(
+        "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+        (title[:120], _now_iso(), conversation_id),
+    )
+    await _db.commit()
+    return cursor.rowcount > 0
+
+
+async def delete_conversation(conversation_id: str) -> bool:
+    if not _db:
+        return False
+    await _db.execute("DELETE FROM conv_messages WHERE conversation_id = ?", (conversation_id,))
+    cursor = await _db.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+    await _db.commit()
+    return cursor.rowcount > 0
+
+
+async def list_conversations(limit: int = 100) -> list[dict]:
+    """Return conversations ordered by most recently updated."""
+    if not _db:
+        return []
+    cursor = await _db.execute(
+        """SELECT c.id, c.title, c.created_at, c.updated_at,
+                  (SELECT COUNT(*) FROM conv_messages m WHERE m.conversation_id = c.id) AS msg_count
+           FROM conversations c
+           ORDER BY c.updated_at DESC
+           LIMIT ?""",
+        (limit,),
+    )
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r[0], "title": r[1], "createdAt": r[2],
+            "updatedAt": r[3], "messageCount": r[4],
+        }
+        for r in rows
+    ]
+
+
+async def get_conversation(conversation_id: str) -> dict | None:
+    """Fetch a conversation with all its messages."""
+    if not _db:
+        return None
+    cursor = await _db.execute(
+        "SELECT id, title, created_at, updated_at FROM conversations WHERE id = ?",
+        (conversation_id,),
+    )
+    conv_row = await cursor.fetchone()
+    if not conv_row:
+        return None
+
+    cursor = await _db.execute(
+        """SELECT id, role, content, range_tokens_json, plan_json,
+                  execution_json, progress_log_json, created_at
+           FROM conv_messages
+           WHERE conversation_id = ?
+           ORDER BY created_at ASC""",
+        (conversation_id,),
+    )
+    msg_rows = await cursor.fetchall()
+
+    def _parse(v: str | None) -> object:
+        if v is None:
+            return None
+        try:
+            return json.loads(v)
+        except (ValueError, TypeError):
+            return None
+
+    messages = [
+        {
+            "id": r[0], "role": r[1], "content": r[2],
+            "rangeTokens": _parse(r[3]),
+            "plan": _parse(r[4]),
+            "execution": _parse(r[5]),
+            "progressLog": _parse(r[6]),
+            "timestamp": r[7],
+        }
+        for r in msg_rows
+    ]
+    return {
+        "id": conv_row[0], "title": conv_row[1],
+        "createdAt": conv_row[2], "updatedAt": conv_row[3],
+        "messages": messages,
+    }
+
+
+async def append_conv_message(
+    *,
+    conversation_id: str,
+    message_id: str,
+    role: str,
+    content: str,
+    range_tokens: object | None = None,
+    plan: object | None = None,
+) -> None:
+    """Append a message to a conversation."""
+    if not _db:
+        return
+    await _db.execute(
+        """INSERT INTO conv_messages
+           (id, conversation_id, role, content, range_tokens_json, plan_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            message_id, conversation_id, role, content,
+            json.dumps(range_tokens) if range_tokens is not None else None,
+            json.dumps(plan) if plan is not None else None,
+            _now_iso(),
+        ),
+    )
+    await _db.execute(
+        "UPDATE conversations SET updated_at = ? WHERE id = ?",
+        (_now_iso(), conversation_id),
+    )
+    await _db.commit()
+
+
+async def update_conv_message_execution(
+    *, conversation_id: str, message_id: str,
+    execution: object | None, progress_log: object | None,
+) -> bool:
+    """Attach an execution state + progress log to an existing message."""
+    if not _db:
+        return False
+    cursor = await _db.execute(
+        """UPDATE conv_messages
+           SET execution_json = ?, progress_log_json = ?
+           WHERE id = ? AND conversation_id = ?""",
+        (
+            json.dumps(execution) if execution is not None else None,
+            json.dumps(progress_log) if progress_log is not None else None,
+            message_id, conversation_id,
+        ),
+    )
+    await _db.commit()
+    return cursor.rowcount > 0
+
+
+async def pop_last_exchange(conversation_id: str) -> int:
+    """Remove the last user+assistant pair. Returns number of rows deleted."""
+    if not _db:
+        return 0
+    cursor = await _db.execute(
+        """SELECT id, role FROM conv_messages
+           WHERE conversation_id = ?
+           ORDER BY created_at DESC LIMIT 2""",
+        (conversation_id,),
+    )
+    rows = await cursor.fetchall()
+    ids_to_delete = [r[0] for r in rows]
+    if not ids_to_delete:
+        return 0
+    placeholders = ",".join("?" for _ in ids_to_delete)
+    await _db.execute(
+        f"DELETE FROM conv_messages WHERE id IN ({placeholders})",  # noqa: S608
+        ids_to_delete,
+    )
+    await _db.commit()
+    return len(ids_to_delete)
 
 
 async def get_interaction(interaction_id: str) -> dict | None:

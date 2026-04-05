@@ -37,6 +37,25 @@ def get_chroma_client():
     return _client
 
 
+def _resolve_embedding_model() -> str:
+    """
+    Resolve the embedding model name/path.
+
+    If a bundled local model exists at backend/models/<name>/, use its absolute
+    path (no network needed — ideal for air-gapped deployments and CI).
+    Otherwise return the bare name so sentence-transformers fetches it from HF.
+    """
+    name = settings.embedding_model
+    # Already an absolute/relative path that exists
+    if Path(name).exists():
+        return str(Path(name).resolve())
+    # Check bundled location: backend/models/<name>/
+    bundled = Path(__file__).resolve().parents[2] / "models" / name
+    if bundled.exists():
+        return str(bundled)
+    return name
+
+
 def get_embedding_fn():
     """Return (or create) the shared SentenceTransformerEmbeddingFunction."""
     global _embedding_fn  # noqa: PLW0603
@@ -47,6 +66,6 @@ def get_embedding_fn():
     from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
     _embedding_fn = SentenceTransformerEmbeddingFunction(
-        model_name=settings.embedding_model,
+        model_name=_resolve_embedding_model(),
     )
     return _embedding_fn

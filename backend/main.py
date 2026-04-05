@@ -24,7 +24,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
-from app.routers import plan, chat, feedback
+from app.routers import plan, chat, feedback, conversations
 from app.routers import analyze
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ app.include_router(chat.router)
 app.include_router(plan.router)
 app.include_router(analyze.router)
 app.include_router(feedback.router)
+app.include_router(conversations.router)
 
 
 @app.on_event("startup")

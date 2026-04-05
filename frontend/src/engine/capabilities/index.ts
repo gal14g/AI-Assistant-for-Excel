@@ -40,5 +40,17 @@ import "./insertPicture";
 import "./insertShape";
 import "./insertTextBox";
 import "./addSlicer";
+import "./splitColumn";
+import "./unpivot";
+import "./crossTabulate";
+import "./bulkFormula";
+import "./compareSheets";
+import "./consolidateRanges";
+import "./extractPattern";
+import "./categorize";
+import "./fillBlanks";
+import "./subtotals";
+import "./transpose";
+import "./namedRange";
 
 export { registry } from "../capabilityRegistry";

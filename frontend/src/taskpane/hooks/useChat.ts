@@ -5,10 +5,18 @@
  * to decide whether to reply with text or generate an execution plan.
  */
 
-import { useState, useCallback, useRef } from "react";
-import { ChatMessage, ExecutionPlan, PlanOption } from "../../engine/types";
-import { sendChatMessage, ChatRequest } from "../../services/api";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { ChatMessage, ExecutionPlan, ExecutionState, PlanOption } from "../../engine/types";
+import {
+  sendChatMessage,
+  ChatRequest,
+  getConversation,
+  popLastExchange as apiPopLastExchange,
+  deleteConversation as apiDeleteConversation,
+} from "../../services/api";
 import { v4 as uuid } from "uuid";
+
+const LS_CONV_ID_KEY = "excel_copilot_active_conversation_id";
 
 interface ChatState {
   messages: ChatMessage[];
@@ -16,8 +24,8 @@ interface ChatState {
   currentPlan: ExecutionPlan | null;
   currentOptions: PlanOption[] | null;
   interactionId: string | null;
-  streamingText: string;
   error: string | null;
+  conversationId: string | null;
 }
 
 interface ChatActions {
@@ -26,9 +34,17 @@ interface ChatActions {
   clearHistory: () => void;
   /** Remove the last user + assistant message pair (used by undo). Returns the user message text. */
   removeLastExchange: () => string;
+  /** Patch an existing message by id — used to attach execution state/log. */
+  updateMessage: (id: string, patch: Partial<ChatMessage>) => void;
+  /** ID of the most recent assistant message that carries a plan, or null. */
+  getLatestPlanMessageId: () => string | null;
   setCurrentPlan: (plan: ExecutionPlan | null) => void;
   setCurrentOptions: (options: PlanOption[] | null) => void;
   dismissError: () => void;
+  /** Load a persisted conversation by ID, replacing current chat state. */
+  loadConversation: (id: string) => Promise<void>;
+  /** Delete the active conversation on the server and clear local state. */
+  deleteCurrentConversation: () => Promise<void>;
 }
 
 export function useChat(): ChatState & ChatActions {
@@ -45,14 +61,23 @@ export function useChat(): ChatState & ChatActions {
   const [currentPlan, setCurrentPlan] = useState<ExecutionPlan | null>(null);
   const [currentOptions, setCurrentOptions] = useState<PlanOption[] | null>(null);
   const [interactionId, setInteractionId] = useState<string | null>(null);
-  const [streamingText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
+  conversationIdRef.current = conversationId;
+
+  // Persist active conversation id across reloads
+  useEffect(() => {
+    if (conversationId) localStorage.setItem(LS_CONV_ID_KEY, conversationId);
+    else localStorage.removeItem(LS_CONV_ID_KEY);
+  }, [conversationId]);
 
   const sendMessage = useCallback(
     async (text: string, rangeTokens?: { address: string; sheetName: string }[]) => {
+      const userMessageId = uuid();
       const userMsg: ChatMessage = {
-        id: uuid(),
+        id: userMessageId,
         role: "user",
         content: text,
         rangeTokens,
@@ -107,12 +132,18 @@ export function useChat(): ChatState & ChatActions {
           usedRangeEnd: usedRangeEnd || undefined,
           locale: navigator.language || undefined,
           conversationHistory: history,
+          conversationId: conversationIdRef.current ?? undefined,
+          userMessageId,
         };
 
         const response = await sendChatMessage(request, abortRef.current?.signal);
 
+        if (response.conversationId && response.conversationId !== conversationIdRef.current) {
+          setConversationId(response.conversationId);
+        }
+
         const assistantMsg: ChatMessage = {
-          id: uuid(),
+          id: response.assistantMessageId ?? uuid(),
           role: "assistant",
           content: response.message,
           plan: response.plans?.[0]?.plan ?? response.plan,
@@ -159,6 +190,11 @@ export function useChat(): ChatState & ChatActions {
 
   /** Remove the last user + assistant pair and return the user message text. */
   const removeLastExchange = useCallback((): string => {
+    const cid = conversationIdRef.current;
+    if (cid) {
+      // Fire-and-forget: remove server-side too
+      void apiPopLastExchange(cid);
+    }
     let removedUserText = "";
     setMessages((prev) => {
       const copy = [...prev];
@@ -199,9 +235,81 @@ export function useChat(): ChatState & ChatActions {
     setCurrentOptions(null);
     setInteractionId(null);
     setError(null);
+    // Starting a fresh chat = new conversation; server will mint a new id on next send.
+    setConversationId(null);
+  }, []);
+
+  const loadConversation = useCallback(async (id: string) => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsLoading(false);
+    setError(null);
+    try {
+      const conv = await getConversation(id);
+      const loaded: ChatMessage[] = conv.messages.map((m) => ({
+        id: m.id,
+        role: m.role as ChatMessage["role"],
+        content: m.content,
+        rangeTokens: m.rangeTokens ?? undefined,
+        plan: (m.plan as ExecutionPlan | null) ?? undefined,
+        execution: (m.execution as ExecutionState | undefined) ?? undefined,
+        progressLog: m.progressLog ?? undefined,
+        timestamp: m.timestamp,
+      }));
+      setMessages(
+        loaded.length
+          ? loaded
+          : [{
+              id: uuid(),
+              role: "system",
+              content: "Conversation restored.",
+              timestamp: new Date().toISOString(),
+            }],
+      );
+      setConversationId(id);
+      setCurrentPlan(null);
+      setCurrentOptions(null);
+      setInteractionId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load conversation");
+    }
+  }, []);
+
+  const deleteCurrentConversation = useCallback(async () => {
+    const cid = conversationIdRef.current;
+    if (cid) {
+      try { await apiDeleteConversation(cid); } catch { /* ignore */ }
+    }
+    clearHistory();
+  }, [clearHistory]);
+
+  // On mount, try to restore the last active conversation
+  useEffect(() => {
+    const saved = localStorage.getItem(LS_CONV_ID_KEY);
+    if (saved) {
+      void loadConversation(saved).catch(() => {
+        localStorage.removeItem(LS_CONV_ID_KEY);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const dismissError = useCallback(() => setError(null), []);
+
+  const updateMessage = useCallback((id: string, patch: Partial<ChatMessage>) => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  }, []);
+
+  // Use a ref to messages so the returned getter doesn't go stale in closures.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const getLatestPlanMessageId = useCallback((): string | null => {
+    const list = messagesRef.current;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].role === "assistant" && list[i].plan) return list[i].id;
+    }
+    return null;
+  }, []);
 
   return {
     messages,
@@ -209,14 +317,18 @@ export function useChat(): ChatState & ChatActions {
     currentPlan,
     currentOptions,
     interactionId,
-    streamingText,
     error,
+    conversationId,
     sendMessage,
     stopMessage,
     clearHistory,
     removeLastExchange,
+    updateMessage,
+    getLatestPlanMessageId,
     setCurrentPlan,
     setCurrentOptions,
     dismissError,
+    loadConversation,
+    deleteCurrentConversation,
   };
 }
