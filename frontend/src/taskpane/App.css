@@ -134,6 +134,22 @@ body {
 @keyframes cc-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 .cc-cursor-blink { animation: cc-blink 1s step-start infinite; margin-left: 1px; }
 
+/* Streaming thinking bubble */
+.cc-streaming-bubble {
+  font-size: 12px;
+  color: var(--cc-text-muted);
+  font-family: var(--cc-font-mono, "SF Mono", "Fira Code", monospace);
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--cc-bg-subtle);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-md);
+  padding: 8px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
 .cc-msg-bubble ul, .cc-msg-bubble ol { margin: 6px 0 6px 20px; padding: 0; }
 .cc-msg-bubble li { margin-bottom: 3px; }
 

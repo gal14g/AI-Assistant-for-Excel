@@ -151,7 +151,8 @@ async def acompletion_stream(messages: list[dict], **overrides: Any) -> AsyncIte
     """
     client = get_async_client()
     kwargs = build_completion_kwargs()
-    kwargs.pop("response_format", None)   # json_mode incompatible with streaming
+    # response_format (json_object) IS compatible with streaming on OpenAI.
+    # Keeping it prevents the model from outputting plain text instead of JSON.
     kwargs["messages"] = messages
     kwargs["stream"] = True
     kwargs.update(overrides)

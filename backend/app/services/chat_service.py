@@ -543,6 +543,8 @@ async def chat_stream(request: ChatRequest) -> AsyncIterator[str]:
 
     # Attempt 2: stripped prompt if parse failed
     if result is None:
+        # Tell the frontend to clear the bad partial text before retrying
+        yield f"data: {_json.dumps({'type': 'reset'})}\n\n"
         full_text = ""
         async for sse in _stream_attempt(_build_retry_messages(request, relevant_actions)):
             yield sse

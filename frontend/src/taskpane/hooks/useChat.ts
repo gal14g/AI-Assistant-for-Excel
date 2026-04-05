@@ -143,6 +143,7 @@ export function useChat(): ChatState & ChatActions {
           request,
           abortRef.current?.signal,
           (chunk) => setStreamingText((prev) => prev + chunk),
+          () => setStreamingText(""),  // reset: clear bad partial text before retry
         );
         setStreamingText("");
 

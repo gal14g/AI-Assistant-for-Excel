@@ -225,30 +225,23 @@ export const ChatPanel: React.FC = () => {
           <MessageBubble key={msg.id} message={msg} />
         ))}
 
-        {/* Live streaming bubble — shows partial LLM output while response generates */}
-        {chat.streamingText && (() => {
-          // Extract just the "message" field text if we can, otherwise show raw
-          const msgMatch = chat.streamingText.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/);
-          const displayText = msgMatch ? msgMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"') : "";
-          // Only render once we have at least the message field started
-          if (!displayText) return null;
-          return (
-            <div className="cc-msg-row assistant">
-              <div className="cc-msg-avatar assistant" aria-hidden="true">
-                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M10 2v3M10 15v3M2 10h3M15 10h3" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
-                  <circle cx="10" cy="10" r="3" fill="white"/>
-                  <path d="M4.93 4.93l2.12 2.12M12.95 12.95l2.12 2.12M4.93 15.07l2.12-2.12M12.95 7.05l2.12-2.12" stroke="white" strokeWidth="1.4" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <div className="cc-msg-body">
-                <div className="cc-msg-bubble assistant" style={{ fontStyle: "italic", color: "var(--cc-text-muted)" }}>
-                  {displayText}<span className="cc-cursor-blink">▋</span>
-                </div>
+        {/* Live streaming bubble — shows raw LLM output as it generates */}
+        {chat.streamingText && (
+          <div className="cc-msg-row assistant">
+            <div className="cc-msg-avatar assistant" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 2v3M10 15v3M2 10h3M15 10h3" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+                <circle cx="10" cy="10" r="3" fill="white"/>
+                <path d="M4.93 4.93l2.12 2.12M12.95 12.95l2.12 2.12M4.93 15.07l2.12-2.12M12.95 7.05l2.12-2.12" stroke="white" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <div className="cc-msg-body">
+              <div className="cc-streaming-bubble">
+                {chat.streamingText}<span className="cc-cursor-blink">▋</span>
               </div>
             </div>
-          );
-        })()}
+          </div>
+        )}
 
         {hasOptions && chat.currentOptions && (
           <div style={{ marginBottom: 14 }}>
@@ -292,7 +285,7 @@ export const ChatPanel: React.FC = () => {
 
       {showSuggested && <SuggestedPrompts onSelect={handleSuggestedPrompt} />}
 
-      {chat.isLoading && (
+      {chat.isLoading && !chat.streamingText && (
         <div className="cc-thinking">
           <div className="cc-thinking-dots">
             <div className="cc-thinking-dot" />

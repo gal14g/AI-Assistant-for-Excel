@@ -130,6 +130,7 @@ export async function sendChatMessageStream(
   request: ChatRequest,
   signal: AbortSignal | undefined,
   onChunk: (text: string) => void,
+  onReset?: () => void,
 ): Promise<ChatResponse> {
   const res = await fetch(`${BASE_URL}/api/chat/stream`, {
     method: "POST",
@@ -165,6 +166,8 @@ export async function sendChatMessageStream(
         const data = JSON.parse(line.slice(6)) as { type: string; text?: string; result?: ChatResponse };
         if (data.type === "chunk" && data.text) {
           onChunk(data.text);
+        } else if (data.type === "reset") {
+          onReset?.();
         } else if (data.type === "done" && data.result) {
           result = data.result;
         }
