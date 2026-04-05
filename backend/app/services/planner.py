@@ -20,10 +20,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import settings
 from ..models.plan import ExecutionPlan
 from ..models.request import PlanRequest
-from .llm_client import acompletion, build_completion_kwargs
+from .llm_client import acompletion
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -150,16 +149,6 @@ def build_user_message(request: PlanRequest) -> str:
         parts.append(f"\nWorkbook path: {request.workbookPath}")
 
     return "\n".join(parts)
-
-
-def _litellm_kwargs() -> dict:
-    """
-    Build the keyword arguments for every LLM call.
-    Delegates to the centralized llm_client module.
-
-    Kept as a named function for backward compatibility with chat_service.py imports.
-    """
-    return build_completion_kwargs()
 
 
 def _build_messages(request: PlanRequest, relevant_actions: list[str] | None = None) -> list[dict]:

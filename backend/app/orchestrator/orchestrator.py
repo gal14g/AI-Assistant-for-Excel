@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from ..models.analytical_plan import AnalyticalPlan, OperationType, SheetData, StrategyType
+from ..models.analytical_plan import AnalyticalPlan, OperationType, SheetData
 from ..models.tool_output import ToolOutput
 from .execution_context import ExecutionContext
 from .validators import validate_plan, ValidationResult
@@ -582,33 +582,3 @@ def _coerce_list(value: Any) -> list[str]:
                 result.extend(str(i) for i in v)
         return result
     return []
-
-
-def _build_hybrid_config_from_estimate(
-    estimate_data: dict,
-    left_columns: list[str],
-    right_columns: list[str],
-) -> dict:
-    """
-    Build a hybrid_config dict from the output of estimate_matchability.
-
-    Uses the per-column strategy recommendations to assign each column pair
-    a strategy.  Weights are proportional to the column scores.
-    """
-    col_strategies: dict[str, str] = estimate_data.get("column_strategies", {})
-    col_scores: dict[str, float] = estimate_data.get("column_scores", {})
-
-    total_score = sum(col_scores.values()) or 1.0
-
-    columns_config = []
-    for lc, rc in zip(left_columns, right_columns):
-        strategy = col_strategies.get(lc, StrategyType.fuzzy.value)
-        weight = col_scores.get(lc, 1.0) / total_score
-        columns_config.append({
-            "left": lc,
-            "right": rc,
-            "strategy": strategy,
-            "weight": round(weight, 4),
-        })
-
-    return {"columns": columns_config}

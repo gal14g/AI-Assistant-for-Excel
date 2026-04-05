@@ -11,9 +11,7 @@ Uses the OpenAI SDK for the LLM call via the centralized llm_client module.
 """
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import Optional
 
 from ..config import settings
@@ -23,6 +21,7 @@ from ..models.analytical_plan import (
     SheetData,
 )
 from ..models.request import ConversationMessage
+from ..services.planner import extract_json as _extract_json
 
 logger = logging.getLogger(__name__)
 
@@ -191,51 +190,3 @@ class AnalyticalPlanner:
         )
 
 
-# ---------------------------------------------------------------------------
-# JSON extraction (reuses logic from existing planner service)
-# ---------------------------------------------------------------------------
-
-def _extract_json(text: str) -> dict:
-    """Extract the first JSON object from LLM output text."""
-    text = text.strip()
-
-    # Strip markdown fences
-    if "```json" in text:
-        m = re.search(r"```json\s*(.*?)```", text, re.DOTALL)
-        if m:
-            text = m.group(1).strip()
-    elif "```" in text:
-        m = re.search(r"```\s*(.*?)```", text, re.DOTALL)
-        if m:
-            candidate = m.group(1).strip()
-            if candidate.startswith("{"):
-                text = candidate
-
-    # Find outermost {}
-    if not text.startswith("{"):
-        try:
-            first = text.index("{")
-            last = text.rindex("}")
-            text = text[first: last + 1]
-        except ValueError:
-            pass
-
-    # Clean trailing commas
-    text = re.sub(r",\s*([}\]])", r"\1", text)
-
-    # First try: standard parse
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    # Second try: json-repair
-    try:
-        from json_repair import repair_json
-        repaired = repair_json(text, return_objects=True)
-        if isinstance(repaired, dict):
-            return repaired
-    except Exception:
-        pass
-
-    raise ValueError(f"Could not parse JSON from LLM response: {text[:300]}")
