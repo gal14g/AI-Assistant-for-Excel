@@ -95,6 +95,8 @@ DECISION RULES:
 - For "message" type, set plans to null
 - LANGUAGE: Always reply in the SAME language the user writes in. If the user writes in Hebrew, reply in Hebrew. If in English, reply in English. Match the user's language naturally.
 - Always write a friendly, concise "message"
+- NEVER use responseType "message" to narrate or confirm a planned action (e.g. "I'll do X", "I will check...", "Sure, I'll match..."). If the task is clear, produce the plan IMMEDIATELY. Only use "message" when you genuinely need to ask the user for missing information, or when answering a question.
+- If the user says "yes", "continue", "go ahead", "do it", or similar confirmation after seeing a "message" response — they are approving the action. Produce the plan NOW, do not send another confirmation message.
 
 AVAILABLE EXCEL ACTIONS:
 {caps}

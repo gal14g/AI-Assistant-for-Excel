@@ -158,7 +158,16 @@ export const ChatPanel: React.FC = () => {
     const lastPlanMsg = [...chat.messages].reverse().find(m => m.role === "assistant" && m.plan);
     if (!lastPlanMsg) return;
     const msgIndex = chat.messages.indexOf(lastPlanMsg);
-    const userMsg = chat.messages.slice(0, msgIndex).reverse().find(m => m.role === "user");
+    // Skip short confirmation messages ("yes", "continue", "go ahead", etc.)
+    // to find the actual instruction that triggered the plan.
+    const isConfirmation = (content: string): boolean => {
+      const t = content.trim().toLowerCase();
+      return t.length <= 35 && /^(yes|yeah|yep|ok|okay|sure|go|continue|do it|proceed|great|perfect|right|correct|good|agreed|go ahead|please|כן|המשך|בסדר)[\s.,!?]*$/.test(t);
+    };
+    const userMsg = chat.messages
+      .slice(0, msgIndex)
+      .reverse()
+      .find(m => m.role === "user" && !isConfirmation(m.content));
     savePreset(
       name,
       userMsg?.content ?? "",

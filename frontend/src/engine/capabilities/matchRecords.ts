@@ -292,11 +292,16 @@ async function compositeKeyMatch(
   try {
     const sourceSheet = resolveSheet(context, params.sourceRange);
     const lookupSheet = resolveSheet(context, params.lookupRange);
-    const wsSourceUsed = sourceSheet.getUsedRange(false);
-    const wsLookupUsed = lookupSheet.getUsedRange(false);
-    wsSourceUsed.load("rowCount");
-    wsLookupUsed.load("rowCount");
+    // Use OrNullObject variant so empty sheets don't throw on context.sync().
+    const wsSourceUsed = sourceSheet.getUsedRangeOrNullObject(false);
+    const wsLookupUsed = lookupSheet.getUsedRangeOrNullObject(false);
+    wsSourceUsed.load("isNullObject, rowCount");
+    wsLookupUsed.load("isNullObject, rowCount");
     await context.sync();
+
+    // If a sheet has no data at all, fall back to a safe large bound (10 000 rows).
+    const sourceRowCount = wsSourceUsed.isNullObject ? 10000 : (wsSourceUsed.rowCount || 1);
+    const lookupRowCount = wsLookupUsed.isNullObject ? 10000 : (wsLookupUsed.rowCount || 1);
 
     // Bound any full-column address to the worksheet's used row count so
     // getUsedRange on the resulting range is guaranteed to succeed.
@@ -313,8 +318,8 @@ async function compositeKeyMatch(
       return addr;
     };
 
-    const boundedSource = boundAddr(params.sourceRange, wsSourceUsed.rowCount);
-    const boundedLookup = boundAddr(params.lookupRange, wsLookupUsed.rowCount);
+    const boundedSource = boundAddr(params.sourceRange, sourceRowCount);
+    const boundedLookup = boundAddr(params.lookupRange, lookupRowCount);
 
     const sourceRng = resolveRange(context, boundedSource);
     const lookupRng = resolveRange(context, boundedLookup);
