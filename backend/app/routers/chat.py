@@ -7,11 +7,12 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from ..models.chat import ChatRequest, ChatResponse
-from ..services.chat_service import chat
+from ..services.chat_service import chat, chat_stream
 from ..services.validator import validate_plan
 
 logger = logging.getLogger(__name__)
@@ -68,3 +69,28 @@ async def chat_endpoint(request: Request, body: ChatRequest) -> ChatResponse:
             )
 
     return result
+
+
+@router.post("/chat/stream")
+@limiter.limit("15/minute")
+async def chat_stream_endpoint(request: Request, body: ChatRequest) -> StreamingResponse:
+    """
+    Streaming chat endpoint — returns SSE.
+
+    Yields:
+      data: {"type": "chunk", "text": "..."}  — LLM token as it arrives
+      data: {"type": "done",  "result": {...}} — final ChatResponse JSON
+    """
+    async def generate():
+        async for sse_line in chat_stream(body):
+            yield sse_line
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )

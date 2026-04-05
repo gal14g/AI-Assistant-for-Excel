@@ -15,7 +15,7 @@ Provider is auto-detected from LLM_MODEL prefix or LLM_BASE_URL.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, AsyncIterator
 
 from openai import AsyncOpenAI, OpenAI
 
@@ -141,6 +141,26 @@ async def acompletion(messages: list[dict], **overrides: Any) -> str:
 
     response = await client.chat.completions.create(**kwargs)
     return response.choices[0].message.content or ""
+
+
+async def acompletion_stream(messages: list[dict], **overrides: Any) -> AsyncIterator[str]:
+    """
+    Stream chat completion tokens. Yields text chunks as they arrive.
+    response_format / json_mode is disabled — streaming and JSON mode are
+    incompatible on most providers.
+    """
+    client = get_async_client()
+    kwargs = build_completion_kwargs()
+    kwargs.pop("response_format", None)   # json_mode incompatible with streaming
+    kwargs["messages"] = messages
+    kwargs["stream"] = True
+    kwargs.update(overrides)
+
+    stream = await client.chat.completions.create(**kwargs)
+    async for chunk in stream:
+        delta = chunk.choices[0].delta.content  # type: ignore[index]
+        if delta:
+            yield delta
 
 
 def completion_sync(messages: list[dict], **overrides: Any) -> str:

@@ -120,6 +120,65 @@ export async function sendChatMessage(
 }
 
 /**
+ * Streaming version of sendChatMessage.
+ *
+ * Connects to POST /api/chat/stream (SSE endpoint).
+ * Calls onChunk(text) for each partial token as the LLM generates it.
+ * Returns the final ChatResponse once the stream ends.
+ */
+export async function sendChatMessageStream(
+  request: ChatRequest,
+  signal: AbortSignal | undefined,
+  onChunk: (text: string) => void,
+): Promise<ChatResponse> {
+  const res = await fetch(`${BASE_URL}/api/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+    signal,
+  });
+
+  if (!res.ok || !res.body) {
+    const err = await res.text().catch(() => String(res.status));
+    throw new Error(`Chat stream failed (${res.status}): ${err}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: ChatResponse | null = null;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    // SSE events are separated by double newlines
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const data = JSON.parse(line.slice(6)) as { type: string; text?: string; result?: ChatResponse };
+        if (data.type === "chunk" && data.text) {
+          onChunk(data.text);
+        } else if (data.type === "done" && data.result) {
+          result = data.result;
+        }
+      } catch {
+        // partial / malformed SSE line — skip
+      }
+    }
+  }
+
+  if (!result) throw new Error("Stream ended without a result event");
+  return result;
+}
+
+/**
  * Fetch the list of available capabilities from the backend.
  */
 export async function fetchCapabilities(): Promise<{ action: string; description: string }[]> {

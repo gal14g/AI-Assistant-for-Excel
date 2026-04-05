@@ -12,17 +12,19 @@ The response is always a JSON object with a "responseType" field.
 from __future__ import annotations
 
 import functools
+import json as _json
 import logging
 import re
 import time
 import uuid
 from datetime import datetime, timezone
+from typing import AsyncIterator
 
 from ..config import settings
 from ..models.chat import ChatRequest, ChatResponse, PlanOption
 from ..models.plan import ExecutionPlan
 from ..services.planner import CAPABILITY_DESCRIPTIONS, extract_json
-from ..services.llm_client import acompletion
+from ..services.llm_client import acompletion, acompletion_stream
 
 logger = logging.getLogger(__name__)
 
@@ -197,13 +199,16 @@ EXAMPLES OF responseType "message":
 - "Hi" / "Hello" → greet back
 - "Should I use XLOOKUP or VLOOKUP?" → give advice
 
-EXAMPLES OF responseType "plan":
-- "Read column A, match it to Sheet2, write results, then create a chart"
-    → step_1: readRange, step_2: matchRecords (dependsOn step_1), step_3: createChart (dependsOn step_2)
-- "Create a pivot from [[Sheet2!A1:B6]]" → createPivot, 1 step (sourceRange only needed)
-- "Sort this table then add green highlighting to values above 100"
-    → step_1: sortRange, step_2: addConditionalFormat (dependsOn step_1)
-- "Clean up column A then remove duplicates" → step_1: cleanupText, step_2: removeDuplicates (dependsOn step_1)
+EXAMPLES OF responseType "plans" (produce the plan IMMEDIATELY — never narrate first):
+- "Sort column A" → {{"responseType":"plans","message":"...","plans":[...]}}
+- "Format column A as currency" → {{"responseType":"plans","message":"...","plans":[...]}}
+- "Match column A to column B and write 'approved'" → {{"responseType":"plans","message":"...","plans":[...]}}
+- User says "yes"/"continue"/"go ahead" after a message → {{"responseType":"plans","message":"...","plans":[...]}}
+
+CRITICAL ANTI-PATTERN — NEVER produce this:
+User: "Match column A to column B and write approved"
+WRONG: {{"responseType":"message","message":"I'll match column A to column B and write approved for you!","plans":null}}
+RIGHT: {{"responseType":"plans","message":"Here are the approaches:","plans":[...]}}
 
 Respond ONLY with the JSON object. No preamble, no markdown fences."""
 
@@ -498,3 +503,60 @@ async def _persist_conversation_turn(request: ChatRequest, result: ChatResponse)
         result.assistantMessageId = assistant_msg_id
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to persist conversation turn: %s", exc)
+
+
+async def chat_stream(request: ChatRequest) -> AsyncIterator[str]:
+    """
+    Streaming version of chat().
+
+    Yields SSE-formatted strings:
+      data: {"type": "chunk", "text": "..."}   — partial LLM token
+      data: {"type": "done",  "result": {...}} — full ChatResponse at end
+
+    The frontend accumulates chunks to display a live preview, then uses
+    the final "done" event to render the plan/message properly.
+    """
+    from .capability_store import search_capabilities
+
+    relevant_actions = search_capabilities(request.userMessage)
+    interaction_id = str(uuid.uuid4())
+    start = time.monotonic()
+
+    full_text = ""
+    result: ChatResponse | None = None
+
+    async def _stream_attempt(messages: list[dict]) -> bool:
+        nonlocal full_text, result
+        full_text = ""
+        try:
+            async for chunk in acompletion_stream(messages):
+                full_text += chunk
+                yield f"data: {_json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+            result = _parse_response(full_text, request)
+            return
+        except Exception as exc:
+            logger.warning("Stream attempt failed: %s", exc)
+
+    # Attempt 1: full prompt with few-shot examples
+    async for sse in _stream_attempt(await _build_chat_messages(request, relevant_actions)):
+        yield sse
+
+    # Attempt 2: stripped prompt if parse failed
+    if result is None:
+        full_text = ""
+        async for sse in _stream_attempt(_build_retry_messages(request, relevant_actions)):
+            yield sse
+
+    if result is None:
+        result = ChatResponse(
+            responseType="message",
+            message="Sorry, I couldn't process that request. Try rephrasing it more simply.",
+            plan=None,
+        )
+
+    latency_ms = int((time.monotonic() - start) * 1000)
+    result.interactionId = interaction_id
+    await _log_interaction_safe(interaction_id, request, result, latency_ms)
+    await _persist_conversation_turn(request, result)
+
+    yield f"data: {_json.dumps({'type': 'done', 'result': result.model_dump(mode='json')})}\n\n"

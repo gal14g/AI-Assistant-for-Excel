@@ -131,6 +131,9 @@ body {
 .cc-msg-bubble.assistant { background: transparent; color: var(--cc-text); padding: 2px 0; }
 .cc-msg-bubble.user { background: var(--cc-bg-muted); color: var(--cc-text); border-radius: 14px 14px 2px 14px; }
 
+@keyframes cc-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.cc-cursor-blink { animation: cc-blink 1s step-start infinite; margin-left: 1px; }
+
 .cc-msg-bubble ul, .cc-msg-bubble ol { margin: 6px 0 6px 20px; padding: 0; }
 .cc-msg-bubble li { margin-bottom: 3px; }
 

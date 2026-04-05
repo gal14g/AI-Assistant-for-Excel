@@ -8,7 +8,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { ChatMessage, ExecutionPlan, ExecutionState, PlanOption } from "../../engine/types";
 import {
-  sendChatMessage,
+  sendChatMessageStream,
   ChatRequest,
   getConversation,
   popLastExchange as apiPopLastExchange,
@@ -21,6 +21,7 @@ const LS_CONV_ID_KEY = "excel_copilot_active_conversation_id";
 interface ChatState {
   messages: ChatMessage[];
   isLoading: boolean;
+  streamingText: string;
   currentPlan: ExecutionPlan | null;
   currentOptions: PlanOption[] | null;
   interactionId: string | null;
@@ -58,6 +59,7 @@ export function useChat(): ChatState & ChatActions {
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
   const [currentPlan, setCurrentPlan] = useState<ExecutionPlan | null>(null);
   const [currentOptions, setCurrentOptions] = useState<PlanOption[] | null>(null);
   const [interactionId, setInteractionId] = useState<string | null>(null);
@@ -136,7 +138,13 @@ export function useChat(): ChatState & ChatActions {
           userMessageId,
         };
 
-        const response = await sendChatMessage(request, abortRef.current?.signal);
+        setStreamingText("");
+        const response = await sendChatMessageStream(
+          request,
+          abortRef.current?.signal,
+          (chunk) => setStreamingText((prev) => prev + chunk),
+        );
+        setStreamingText("");
 
         if (response.conversationId && response.conversationId !== conversationIdRef.current) {
           setConversationId(response.conversationId);
@@ -186,6 +194,7 @@ export function useChat(): ChatState & ChatActions {
     abortRef.current?.abort();
     abortRef.current = null;
     setIsLoading(false);
+    setStreamingText("");
   }, []);
 
   /** Remove the last user + assistant pair and return the user message text. */
@@ -314,6 +323,7 @@ export function useChat(): ChatState & ChatActions {
   return {
     messages,
     isLoading,
+    streamingText,
     currentPlan,
     currentOptions,
     interactionId,
