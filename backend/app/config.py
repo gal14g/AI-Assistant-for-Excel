@@ -2,7 +2,8 @@
 Application configuration loaded from environment variables.
 
 All settings are read from the single .env file at the project root.
-LLM provider is fully generic via LiteLLM — see .env.example for provider table.
+LLM provider is configured via LLM_MODEL + LLM_BASE_URL — uses the OpenAI SDK
+with auto-detected base URLs for Gemini, Ollama, and other compatible providers.
 """
 
 from pathlib import Path
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
     """Application settings with defaults for local development."""
 
     # ── LLM provider ──────────────────────────────────────────────────────────
-    llm_model: str = "claude-sonnet-4-20250514"
+    llm_model: str = "gpt-4o"
     llm_api_key: str = ""
     llm_base_url: str = ""
     llm_api_version: str = ""

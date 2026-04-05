@@ -18,17 +18,13 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-import litellm
-
 from ..config import settings
 from ..models.chat import ChatRequest, ChatResponse, PlanOption
 from ..models.plan import ExecutionPlan
-from ..services.planner import _litellm_kwargs, CAPABILITY_DESCRIPTIONS, extract_json
+from ..services.planner import CAPABILITY_DESCRIPTIONS, extract_json
+from ..services.llm_client import acompletion
 
 logger = logging.getLogger(__name__)
-
-# Silence verbose LiteLLM logs
-litellm.success_callback = []
 
 
 @functools.lru_cache(maxsize=64)
@@ -425,11 +421,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
     result: ChatResponse | None = None
 
     try:
-        response = await litellm.acompletion(
+        text = await acompletion(
             messages=await _build_chat_messages(request, relevant_actions),
-            **_litellm_kwargs(),
         )
-        text: str = response.choices[0].message.content or ""
         logger.debug("LLM raw response (attempt 1): %s", text[:500])
         result = _parse_response(text, request)
     except Exception as exc:
@@ -438,11 +432,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
     # Retry with no few-shot examples and a stronger JSON-only instruction
     if result is None:
         try:
-            response = await litellm.acompletion(
+            text = await acompletion(
                 messages=_build_retry_messages(request, relevant_actions),
-                **_litellm_kwargs(),
             )
-            text = response.choices[0].message.content or ""
             logger.debug("LLM raw response (attempt 2): %s", text[:500])
             result = _parse_response(text, request)
         except Exception as exc:

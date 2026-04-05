@@ -1,17 +1,16 @@
 """
 LLM Planner Service
 
-Sends the user's request to any LLM supported by LiteLLM and receives a
+Sends the user's request to any LLM supported via the OpenAI SDK and receives a
 structured JSON execution plan.  The LLM is instructed to output ONLY a typed
 JSON plan — never executable code.
 
 Provider selection is driven entirely by config.py / .env:
-  - Set LLM_MODEL to any LiteLLM model string (see config.py for examples)
+  - Set LLM_MODEL to any supported model string (e.g. gpt-4o, gemini/gemini-2.0-flash)
   - Set LLM_API_KEY if the provider requires one
-  - Set LLM_BASE_URL for local / self-hosted endpoints (Ollama, LiteLLM proxy…)
+  - Set LLM_BASE_URL for local / self-hosted endpoints (Ollama, custom proxy…)
 
-LiteLLM translates to the correct provider SDK automatically, so this file
-stays provider-agnostic.
+The llm_client module handles provider auto-detection and base_url routing.
 """
 
 from __future__ import annotations
@@ -21,14 +20,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-import litellm
-
 from ..config import settings
 from ..models.plan import ExecutionPlan
 from ..models.request import PlanRequest
-
-# Silence LiteLLM's verbose success logs in production
-litellm.success_callback = []
+from .llm_client import acompletion, build_completion_kwargs
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -159,40 +154,20 @@ def build_user_message(request: PlanRequest) -> str:
 
 def _litellm_kwargs() -> dict:
     """
-    Build the keyword arguments for every litellm call.
+    Build the keyword arguments for every LLM call.
+    Delegates to the centralized llm_client module.
 
-    Only non-empty optional fields are included so that litellm's own
-    per-provider defaults are not overridden with blank strings.
+    Kept as a named function for backward compatibility with chat_service.py imports.
     """
-    kwargs: dict = {
-        "model": settings.llm_model,
-        "max_tokens": settings.llm_max_tokens,
-        "temperature": settings.llm_temperature,
-        "timeout": 60,
-    }
-    if settings.llm_api_key:
-        kwargs["api_key"] = settings.llm_api_key
-    if settings.llm_base_url:
-        kwargs["api_base"] = settings.llm_base_url
-    if settings.llm_api_version:
-        kwargs["api_version"] = settings.llm_api_version
-    if settings.llm_json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
-    # Qwen3 enables "thinking mode" by default — it generates thousands of
-    # internal reasoning tokens before the actual response, making it appear
-    # to hang.  Disable it: we want direct JSON output, not chain-of-thought.
-    if "qwen3" in settings.llm_model.lower():
-        kwargs["extra_body"] = {"think": False}
-    return kwargs
+    return build_completion_kwargs()
 
 
 def _build_messages(request: PlanRequest, relevant_actions: list[str] | None = None) -> list[dict]:
     """
     Assemble the message list.
 
-    LiteLLM uses the OpenAI message format universally.  For providers that
-    have a separate system-prompt field (Anthropic, Gemini), LiteLLM extracts
-    it automatically from the first system-role message.
+    Uses the standard OpenAI message format (system/user/assistant roles).
+    All OpenAI-compatible providers accept this format.
     """
     messages: list[dict] = [{"role": "system", "content": build_system_prompt(relevant_actions)}]
 
@@ -214,12 +189,9 @@ async def generate_plan(request: PlanRequest) -> tuple[ExecutionPlan, str]:
 
     relevant_actions = search_capabilities(request.userMessage)
 
-    response = await litellm.acompletion(
+    response_text = await acompletion(
         messages=_build_messages(request, relevant_actions),
-        **_litellm_kwargs(),
     )
-
-    response_text: str = response.choices[0].message.content or ""
     plan_json = extract_json(response_text)
     _fill_defaults(plan_json, request)
 

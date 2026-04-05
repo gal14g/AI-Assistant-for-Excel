@@ -1,6 +1,6 @@
 # Excel AI Copilot
 
-A Microsoft Excel Office Add-in that lets you control your spreadsheet with natural language. Powered by any LLM via LiteLLM (OpenAI, Anthropic Claude, Ollama, Azure, Google Gemini, AWS Bedrock, and more).
+A Microsoft Excel Office Add-in that lets you control your spreadsheet with natural language. Powered by any OpenAI-compatible LLM provider (OpenAI, Google Gemini, Azure, Ollama, and more).
 
 ---
 
@@ -46,13 +46,13 @@ Frontend (React + TypeScript)
     |  taskpane UI, execution engine, 34+ capability handlers
     |  POST /api/chat
     v
-Backend (FastAPI + LiteLLM)
+Backend (FastAPI + OpenAI SDK)
     |
     |-- Vector search (ChromaDB + all-MiniLM-L6-v2)
     |   |-- Capability store: finds the ~10 most relevant actions for each query
     |   |-- Example store: retrieves the ~5 most relevant few-shot examples
     |
-    |-- LLM call (any provider via LiteLLM)
+    |-- LLM call (any OpenAI-compatible provider)
     |   Returns 2-3 alternative plan options as structured JSON
     |
     |-- Feedback DB (SQLite)
@@ -164,7 +164,7 @@ npm install
 
 Create `.env` in the project root (copy from `.env.example`):
 ```env
-LLM_MODEL=claude-sonnet-4-20250514
+LLM_MODEL=gpt-4o
 LLM_API_KEY=your-api-key-here
 ```
 
@@ -233,21 +233,27 @@ Webpack hot-reloads automatically. Save the file and the add-in updates within a
 
 ## Switching LLM providers
 
-All LLM configuration is in `.env` (project root). The backend uses [LiteLLM](https://docs.litellm.ai/docs/providers) which supports 100+ providers with a unified API.
+All LLM configuration is in `.env` (project root). The backend uses the **OpenAI Python SDK** — any provider that exposes an OpenAI-compatible API works out of the box.
 
-### Anthropic Claude (recommended for quality)
+The provider is auto-detected from the `LLM_MODEL` prefix or `LLM_BASE_URL`. No code changes needed.
 
-```env
-LLM_MODEL=claude-sonnet-4-20250514
-LLM_API_KEY=sk-ant-...
-```
-
-### OpenAI GPT-4o
+### OpenAI (recommended)
 
 ```env
 LLM_MODEL=gpt-4o
 LLM_API_KEY=sk-...
 ```
+
+### Google Gemini
+
+Gemini exposes an [OpenAI-compatible API](https://ai.google.dev/gemini-api/docs/openai). The `gemini/` prefix auto-routes to the correct base URL.
+
+```env
+LLM_MODEL=gemini/gemini-2.0-flash
+LLM_API_KEY=AIza...
+```
+
+Other Gemini models: `gemini/gemini-2.5-pro`, `gemini/gemini-2.5-flash`.
 
 ### Ollama (free, local, no API key)
 
@@ -260,9 +266,10 @@ ollama serve
 Then configure:
 ```env
 LLM_MODEL=ollama/qwen2.5:14b
-LLM_BASE_URL=http://localhost:11434
 LLM_JSON_MODE=true
 ```
+
+The `ollama/` prefix auto-routes to `http://localhost:11434/v1`. Override with `LLM_BASE_URL` if Ollama runs elsewhere.
 
 **Best local models for this project** (structured JSON generation):
 
@@ -278,24 +285,29 @@ LLM_JSON_MODE=true
 ### Azure OpenAI
 
 ```env
-LLM_MODEL=azure/my-deployment-name
+LLM_MODEL=gpt-4o
 LLM_API_KEY=your-azure-key
 LLM_BASE_URL=https://my-resource.openai.azure.com/
 LLM_API_VERSION=2024-02-01
 ```
 
-### Google Gemini
+### Anthropic Claude (via OpenRouter or proxy)
+
+Claude doesn't natively expose an OpenAI-compatible API. Use [OpenRouter](https://openrouter.ai/) or a proxy:
 
 ```env
-LLM_MODEL=gemini/gemini-1.5-pro
-LLM_API_KEY=AIza...
+# Via OpenRouter
+LLM_MODEL=anthropic/claude-sonnet-4-20250514
+LLM_API_KEY=sk-or-...
+LLM_BASE_URL=https://openrouter.ai/api/v1
 ```
 
-### AWS Bedrock
+### Any OpenAI-compatible endpoint
 
 ```env
-LLM_MODEL=bedrock/anthropic.claude-3-sonnet-20240229-v1:0
-# Uses AWS credentials from environment or ~/.aws/credentials
+LLM_MODEL=my-model-name
+LLM_BASE_URL=http://my-proxy:4000/v1
+LLM_API_KEY=key-if-required
 ```
 
 ### Switching at runtime
@@ -473,7 +485,7 @@ Set these in **GitLab > Settings > CI/CD > Variables**:
 
 | Variable | Required | Description |
 |---|---|---|
-| `LLM_MODEL` | Yes | LiteLLM model string |
+| `LLM_MODEL` | Yes | Model string (e.g. `gpt-4o`, `gemini/gemini-2.0-flash`) |
 | `LLM_API_KEY` | Yes | API key (mark as **masked** + **protected**) |
 | `FRONTEND_URL` | Yes | Public URL of the deployed add-in |
 | `OPENSHIFT_SERVER` | For deploy | Cluster API URL |
@@ -546,7 +558,7 @@ All settings are environment variables. Copy `.env.example` to `.env` in the pro
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_MODEL` | `claude-sonnet-4-20250514` | LiteLLM model string ([full list](https://docs.litellm.ai/docs/providers)) |
+| `LLM_MODEL` | `gpt-4o` | Model string (e.g. `gpt-4o`, `gemini/gemini-2.0-flash`, `ollama/qwen2.5:14b`) |
 | `LLM_API_KEY` | _(empty)_ | API key for your LLM provider |
 | `LLM_BASE_URL` | _(empty)_ | Custom API base URL (Ollama, Azure, proxy) |
 | `LLM_API_VERSION` | _(empty)_ | Azure OpenAI API version only |

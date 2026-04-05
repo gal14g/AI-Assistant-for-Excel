@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from app.planner.planner import AnalyticalPlanner, _extract_json
 from app.models.analytical_plan import (
@@ -52,15 +52,9 @@ def both_sheets(customers_sheet, orders_sheet) -> dict[str, SheetData]:
     return {"Customers": customers_sheet, "Orders": orders_sheet}
 
 
-def _mock_llm_response(content: str):
-    """Build a mock LiteLLM acompletion response."""
-    msg = MagicMock()
-    msg.content = content
-    choice = MagicMock()
-    choice.message = msg
-    resp = MagicMock()
-    resp.choices = [choice]
-    return resp
+def _mock_llm_response(content: str) -> str:
+    """Build a mock acompletion response (now returns a string directly)."""
+    return content
 
 
 _VALID_MATCH_JSON = json.dumps({
@@ -130,7 +124,7 @@ _CLARIFICATION_JSON = json.dumps({
 @pytest.mark.asyncio
 async def test_plan_parses_valid_match_rows_json(both_sheets):
     planner = AnalyticalPlanner()
-    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+    with patch("app.services.llm_client.acompletion", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = _mock_llm_response(_VALID_MATCH_JSON)
         plan = await planner.plan("Match customers with orders by name and city", both_sheets)
 
@@ -146,7 +140,7 @@ async def test_plan_parses_valid_match_rows_json(both_sheets):
 async def test_plan_parses_valid_aggregate_json(customers_sheet):
     planner = AnalyticalPlanner()
     sheets = {"Customers": customers_sheet}
-    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+    with patch("app.services.llm_client.acompletion", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = _mock_llm_response(_VALID_AGGREGATE_JSON)
         plan = await planner.plan("Group customers by city and count them", sheets)
 
@@ -159,7 +153,7 @@ async def test_plan_parses_valid_aggregate_json(customers_sheet):
 async def test_plan_parses_valid_find_duplicates_json(customers_sheet):
     planner = AnalyticalPlanner()
     sheets = {"Customers": customers_sheet}
-    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+    with patch("app.services.llm_client.acompletion", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = _mock_llm_response(_VALID_DUPLICATES_JSON)
         plan = await planner.plan("Find duplicate customers", sheets)
 
@@ -170,7 +164,7 @@ async def test_plan_parses_valid_find_duplicates_json(customers_sheet):
 @pytest.mark.asyncio
 async def test_plan_returns_fallback_on_invalid_json(both_sheets):
     planner = AnalyticalPlanner()
-    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+    with patch("app.services.llm_client.acompletion", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = _mock_llm_response("This is not JSON at all, sorry!")
         plan = await planner.plan("Match rows", both_sheets)
 
@@ -182,7 +176,7 @@ async def test_plan_returns_fallback_on_invalid_json(both_sheets):
 @pytest.mark.asyncio
 async def test_plan_returns_clarification_when_needed(both_sheets):
     planner = AnalyticalPlanner()
-    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+    with patch("app.services.llm_client.acompletion", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = _mock_llm_response(_CLARIFICATION_JSON)
         plan = await planner.plan("Do something with the data", both_sheets)
 
@@ -194,7 +188,7 @@ async def test_plan_returns_clarification_when_needed(both_sheets):
 @pytest.mark.asyncio
 async def test_plan_includes_correct_tool_chain_for_match(both_sheets):
     planner = AnalyticalPlanner()
-    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+    with patch("app.services.llm_client.acompletion", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = _mock_llm_response(_VALID_MATCH_JSON)
         plan = await planner.plan("Match by name and city", both_sheets)
 
@@ -208,7 +202,7 @@ async def test_plan_includes_correct_tool_chain_for_match(both_sheets):
 @pytest.mark.asyncio
 async def test_plan_confidence_within_range(both_sheets):
     planner = AnalyticalPlanner()
-    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+    with patch("app.services.llm_client.acompletion", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = _mock_llm_response(_VALID_MATCH_JSON)
         plan = await planner.plan("match rows", both_sheets)
 
@@ -219,7 +213,7 @@ async def test_plan_confidence_within_range(both_sheets):
 async def test_plan_with_multiple_sheets(customers_sheet, orders_sheet):
     sheets = {"Customers": customers_sheet, "Orders": orders_sheet}
     planner = AnalyticalPlanner()
-    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+    with patch("app.services.llm_client.acompletion", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = _mock_llm_response(_VALID_MATCH_JSON)
         plan = await planner.plan("Match Customers with Orders", sheets)
 

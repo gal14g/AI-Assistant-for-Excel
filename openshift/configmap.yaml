@@ -20,7 +20,7 @@ data:
   #   Anthropic: claude-sonnet-4-20250514
   #   Cohere:    command-a-03-2025
   #   Ollama:    ollama/llama3
-  LLM_MODEL: "claude-sonnet-4-20250514"
+  LLM_MODEL: "gpt-4o"
   LLM_MAX_TOKENS: "4096"
   LLM_TEMPERATURE: "0.1"
   LLM_JSON_MODE: "false"

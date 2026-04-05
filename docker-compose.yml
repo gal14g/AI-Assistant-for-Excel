@@ -27,7 +27,7 @@ services:
       - "8080:8080"
     environment:
       # ── LLM provider (required) ─────────────────────────────────────────────
-      LLM_MODEL: ${LLM_MODEL:-claude-sonnet-4-20250514}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o}
       LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY must be set in .env}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_VERSION: ${LLM_API_VERSION:-}

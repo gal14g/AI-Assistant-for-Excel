@@ -7,7 +7,7 @@ Takes a user message + sheet context and returns an AnalyticalPlan describing:
   - An ordered tool chain (list of OperationType) with parameters
   - Whether clarification is needed before proceeding
 
-Uses LiteLLM for the LLM call, exactly as the existing planner service does.
+Uses the OpenAI SDK for the LLM call via the centralized llm_client module.
 """
 from __future__ import annotations
 
@@ -15,8 +15,6 @@ import json
 import logging
 import re
 from typing import Optional
-
-import litellm
 
 from ..config import settings
 from ..models.analytical_plan import (
@@ -127,14 +125,12 @@ class AnalyticalPlanner:
         messages = self._build_messages(user_message, sheets, conversation_history)
 
         try:
-            response = await litellm.acompletion(
-                model=self._model,
+            from ..services.llm_client import acompletion
+            raw_text = await acompletion(
                 messages=messages,
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
-                **self._extra_kwargs(),
             )
-            raw_text: str = response.choices[0].message.content or ""
         except Exception as exc:
             logger.warning("LLM call failed in AnalyticalPlanner.plan: %s", exc)
             return self._fallback_plan(user_message, str(exc))
@@ -177,18 +173,6 @@ class AnalyticalPlanner:
 
         messages.append({"role": "user", "content": "\n".join(context_parts)})
         return messages
-
-    def _extra_kwargs(self) -> dict:
-        kwargs: dict = {}
-        if settings.llm_api_key:
-            kwargs["api_key"] = settings.llm_api_key
-        if settings.llm_base_url:
-            kwargs["api_base"] = settings.llm_base_url
-        if settings.llm_api_version:
-            kwargs["api_version"] = settings.llm_api_version
-        if settings.llm_json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-        return kwargs
 
     @staticmethod
     def _fallback_plan(user_message: str, reason: str) -> AnalyticalPlan:
