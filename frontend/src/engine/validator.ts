@@ -450,6 +450,117 @@ function validateActionParams(
         });
       }
       break;
+    // --- New actions (batch 2) ---
+    case "fuzzyMatch":
+      requireField(step.id, p, "lookupRange", errors);
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "deleteRowsByCondition":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "column", errors);
+      requireField(step.id, p, "condition", errors);
+      break;
+    case "splitByGroup":
+      requireField(step.id, p, "dataRange", errors);
+      requireField(step.id, p, "groupByColumn", errors);
+      break;
+    case "lookupAll":
+      requireField(step.id, p, "lookupRange", errors);
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "returnColumn", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "regexReplace":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "pattern", errors);
+      requireField(step.id, p, "replacement", errors);
+      break;
+    case "coerceDataType":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "targetType", errors);
+      break;
+    case "normalizeDates":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "outputFormat", errors);
+      break;
+    case "deduplicateAdvanced":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "keyColumns", errors);
+      break;
+    case "joinSheets":
+      requireField(step.id, p, "leftRange", errors);
+      requireField(step.id, p, "rightRange", errors);
+      requireField(step.id, p, "leftKeyColumn", errors);
+      requireField(step.id, p, "rightKeyColumn", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "frequencyDistribution":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "runningTotal":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "rankColumn":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "topN":
+      requireField(step.id, p, "dataRange", errors);
+      requireField(step.id, p, "valueColumn", errors);
+      requireField(step.id, p, "n", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "percentOfTotal":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "growthRate":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "consolidateAllSheets":
+      // All params are optional (has sensible defaults)
+      break;
+    case "cloneSheetStructure":
+      requireField(step.id, p, "sourceSheet", errors);
+      requireField(step.id, p, "newSheetName", errors);
+      break;
+    case "addReportHeader":
+      requireField(step.id, p, "title", errors);
+      break;
+    case "alternatingRowFormat":
+      requireField(step.id, p, "range", errors);
+      break;
+    case "quickFormat":
+      requireField(step.id, p, "range", errors);
+      break;
+    case "refreshPivot":
+      // All params optional — refreshes all pivots by default
+      break;
+    case "pivotCalculatedField":
+      requireField(step.id, p, "pivotName", errors);
+      requireField(step.id, p, "fieldName", errors);
+      requireField(step.id, p, "formula", errors);
+      break;
+    case "addDropdownControl":
+      requireField(step.id, p, "cell", errors);
+      requireField(step.id, p, "listSource", errors);
+      break;
+    case "conditionalFormula":
+      requireField(step.id, p, "range", errors);
+      requireField(step.id, p, "conditionColumn", errors);
+      requireField(step.id, p, "condition", errors);
+      requireField(step.id, p, "trueFormula", errors);
+      requireField(step.id, p, "falseFormula", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "spillFormula":
+      requireField(step.id, p, "cell", errors);
+      requireField(step.id, p, "formula", errors);
+      break;
     default:
       // Extensible: unknown actions are caught by the registry check above
       break;

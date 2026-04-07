@@ -39,7 +39,7 @@ Works on **macOS, Windows, and Linux**. Runs fully offline when paired with a lo
 - Chat with an AI assistant directly inside Excel's task pane
 - The AI is **grounded in your actual data** — every turn attaches a lightweight workbook snapshot (headers, dtypes, sample rows, anchor cell) so the planner never guesses column names
 - Returns **1-3 alternative plan options** for each request so you can pick the best approach
-- **51 capabilities**: match records, create charts/pivots, sort/filter, clean text, conditional formatting, find & replace, format cells, split columns, unpivot, cross-tabulate, extract patterns (regex), categorize, subtotals, transpose, named ranges, slicers, shapes, page layout, and more
+- **76 capabilities**: match records (exact + fuzzy + contains), lookup-all (return every match), SQL-style joins, create charts/pivots, sort/filter, clean text, conditional formatting, find & replace (including regex replace), format cells, split columns, unpivot, cross-tabulate, extract patterns (regex), categorize, subtotals, transpose, named ranges, slicers, shapes, page layout, frequency distributions, running totals, ranking, top-N, percent-of-total, growth rates, delete rows by condition, split sheet by group, consolidate all sheets, advanced deduplication, data type coercion, date normalization, report headers, zebra-striping, quick-format, refresh pivots, spill formulas, and more
 - XLOOKUP with automatic fallback to VLOOKUP for older Excel versions (2016/2019)
 - Streaming responses via SSE — you see the plan forming live
 - Full undo support (client-side snapshot stack)
@@ -74,7 +74,7 @@ User's Excel
     | Office.js (HTTPS)
     v
 Frontend (React + TypeScript)
-    |  taskpane UI, workbook snapshot, 51 capability handlers
+    |  taskpane UI, workbook snapshot, 76 capability handlers
     |  POST /api/chat/stream   (SSE — primary)
     v
 Backend (FastAPI + OpenAI SDK)
@@ -165,7 +165,7 @@ ai-assistant-for-excel/
     |-- webpack.config.js     Build config + HTTPS + API proxy
     |-- package.json
     |-- src/
-        |-- engine/           Execution engine (51 capability handlers, validator, executor)
+        |-- engine/           Execution engine (76 capability handlers, validator, executor)
         |-- services/         API client (chat stream, feedback, conversations)
         |-- taskpane/         UI components + hooks + workbook snapshot
         |-- shared/           snapshot.ts (undo stack)
@@ -224,7 +224,7 @@ uvicorn main:app --reload --port 8000
 
 On first startup, the backend will:
 1. Load the `all-MiniLM-L6-v2` embedding model from `backend/models/` (bundled in the repo, ~87MB — no network call required)
-2. Index all 51 capabilities into ChromaDB (~2 seconds)
+2. Index all 76 capabilities into ChromaDB (~2 seconds)
 3. Seed curated few-shot examples into the example store
 4. Create the SQLite database (feedback + conversations)
 

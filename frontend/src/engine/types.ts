@@ -63,7 +63,32 @@ export type StepAction =
   | "fillBlanks"
   | "subtotals"
   | "transpose"
-  | "namedRange";
+  | "namedRange"
+  | "fuzzyMatch"
+  | "deleteRowsByCondition"
+  | "splitByGroup"
+  | "lookupAll"
+  | "regexReplace"
+  | "coerceDataType"
+  | "normalizeDates"
+  | "deduplicateAdvanced"
+  | "joinSheets"
+  | "frequencyDistribution"
+  | "runningTotal"
+  | "rankColumn"
+  | "topN"
+  | "percentOfTotal"
+  | "growthRate"
+  | "consolidateAllSheets"
+  | "cloneSheetStructure"
+  | "addReportHeader"
+  | "alternatingRowFormat"
+  | "quickFormat"
+  | "refreshPivot"
+  | "pivotCalculatedField"
+  | "addDropdownControl"
+  | "conditionalFormula"
+  | "spillFormula";
 
 // ---------------------------------------------------------------------------
 // Step parameter shapes – one per action
@@ -582,6 +607,217 @@ export interface NamedRangeParams {
   sheetName?: string;
 }
 
+export interface FuzzyMatchParams {
+  /** Column with values to match */
+  lookupRange: string;
+  /** Column to match against */
+  sourceRange: string;
+  /** Where to write results */
+  outputRange: string;
+  /** Similarity threshold 0-1 (default 0.7) */
+  threshold: number;
+  /** Constant to write instead of matched value */
+  writeValue?: string;
+  /** If true, write the best matching source value */
+  returnBestMatch?: boolean;
+}
+
+export interface DeleteRowsByConditionParams {
+  /** Data range including headers */
+  range: string;
+  /** 1-based column index to check */
+  column: number;
+  /** Condition to evaluate */
+  condition: "blank" | "notBlank" | "equals" | "notEquals" | "contains" | "greaterThan" | "lessThan";
+  /** Value for equals/notEquals/contains/greaterThan/lessThan */
+  value?: string | number;
+  /** Whether the range has headers (default true — skip header row) */
+  hasHeaders?: boolean;
+}
+
+export interface SplitByGroupParams {
+  /** Data range including headers */
+  dataRange: string;
+  /** 1-based column index to group by */
+  groupByColumn: number;
+  /** Include header row in each new sheet (default true) */
+  keepHeaders?: boolean;
+}
+
+export interface LookupAllParams {
+  /** Column with values to match */
+  lookupRange: string;
+  /** Range to search in */
+  sourceRange: string;
+  /** 1-based column index in source to return */
+  returnColumn: number;
+  /** Where to write results */
+  outputRange: string;
+  /** Delimiter for joining multiple matches (default ", ") */
+  delimiter?: string;
+  /** Match type (default "exact") */
+  matchType?: "exact" | "contains";
+}
+
+export interface RegexReplaceParams {
+  /** Range to apply replacement */
+  range: string;
+  /** Regex pattern */
+  pattern: string;
+  /** Replacement string (supports $1, $2 capture groups) */
+  replacement: string;
+  /** Regex flags (default "gi") */
+  flags?: string;
+}
+
+export interface CoerceDataTypeParams {
+  range: string;
+  targetType: "number" | "text" | "date";
+  dateFormat?: string;
+  locale?: string;
+}
+
+export interface NormalizeDatesParams {
+  range: string;
+  outputFormat: string;
+  inputFormat?: string;
+}
+
+export interface DeduplicateAdvancedParams {
+  range: string;
+  keyColumns: number[];
+  keepStrategy: "first" | "last" | "mostComplete" | "newest";
+  dateColumn?: number;
+  hasHeaders?: boolean;
+}
+
+export interface JoinSheetsParams {
+  leftRange: string;
+  rightRange: string;
+  leftKeyColumn: number;
+  rightKeyColumn: number;
+  joinType: "inner" | "left" | "right" | "full";
+  outputRange: string;
+}
+
+export interface FrequencyDistributionParams {
+  sourceRange: string;
+  outputRange: string;
+  sortBy?: "value" | "frequency";
+  ascending?: boolean;
+  includePercent?: boolean;
+}
+
+export interface RunningTotalParams {
+  sourceRange: string;
+  outputRange: string;
+  hasHeaders?: boolean;
+}
+
+export interface RankColumnParams {
+  sourceRange: string;
+  outputRange: string;
+  order?: "descending" | "ascending";
+  hasHeaders?: boolean;
+}
+
+export interface TopNParams {
+  dataRange: string;
+  valueColumn: number;
+  n: number;
+  position?: "top" | "bottom";
+  outputRange: string;
+  hasHeaders?: boolean;
+}
+
+export interface PercentOfTotalParams {
+  sourceRange: string;
+  outputRange: string;
+  hasHeaders?: boolean;
+  formatAsPercent?: boolean;
+}
+
+export interface GrowthRateParams {
+  sourceRange: string;
+  outputRange: string;
+  hasHeaders?: boolean;
+  formatAsPercent?: boolean;
+}
+
+export interface ConsolidateAllSheetsParams {
+  outputSheetName?: string;
+  hasHeaders?: boolean;
+  excludeSheets?: string[];
+}
+
+export interface CloneSheetStructureParams {
+  sourceSheet: string;
+  newSheetName: string;
+}
+
+export interface AddReportHeaderParams {
+  title: string;
+  sheetName?: string;
+  range?: string;
+  fontSize?: number;
+  fillColor?: string;
+  fontColor?: string;
+  bold?: boolean;
+}
+
+export interface AlternatingRowFormatParams {
+  range: string;
+  evenColor?: string;
+  oddColor?: string;
+  hasHeaders?: boolean;
+}
+
+export interface QuickFormatParams {
+  range: string;
+  freezeHeader?: boolean;
+  addFilters?: boolean;
+  autoFit?: boolean;
+  zebraStripe?: boolean;
+  headerColor?: string;
+  headerFontColor?: string;
+}
+
+export interface RefreshPivotParams {
+  pivotName?: string;
+  sheetName?: string;
+}
+
+export interface PivotCalculatedFieldParams {
+  pivotName: string;
+  sheetName?: string;
+  fieldName: string;
+  formula: string;
+}
+
+export interface AddDropdownControlParams {
+  cell: string;
+  listSource: string;
+  promptMessage?: string;
+  sheetName?: string;
+}
+
+export interface ConditionalFormulaParams {
+  range: string;
+  conditionColumn: number;
+  condition: "blank" | "notBlank" | "equals" | "notEquals" | "contains" | "greaterThan" | "lessThan";
+  conditionValue?: string | number;
+  trueFormula: string;
+  falseFormula: string;
+  outputRange: string;
+  hasHeaders?: boolean;
+}
+
+export interface SpillFormulaParams {
+  cell: string;
+  formula: string;
+  sheetName?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Union of all param types
 // ---------------------------------------------------------------------------
@@ -633,7 +869,32 @@ export type StepParams =
   | FillBlanksParams
   | SubtotalsParams
   | TransposeParams
-  | NamedRangeParams;
+  | NamedRangeParams
+  | FuzzyMatchParams
+  | DeleteRowsByConditionParams
+  | SplitByGroupParams
+  | LookupAllParams
+  | RegexReplaceParams
+  | CoerceDataTypeParams
+  | NormalizeDatesParams
+  | DeduplicateAdvancedParams
+  | JoinSheetsParams
+  | FrequencyDistributionParams
+  | RunningTotalParams
+  | RankColumnParams
+  | TopNParams
+  | PercentOfTotalParams
+  | GrowthRateParams
+  | ConsolidateAllSheetsParams
+  | CloneSheetStructureParams
+  | AddReportHeaderParams
+  | AlternatingRowFormatParams
+  | QuickFormatParams
+  | RefreshPivotParams
+  | PivotCalculatedFieldParams
+  | AddDropdownControlParams
+  | ConditionalFormulaParams
+  | SpillFormulaParams;
 
 // ---------------------------------------------------------------------------
 // Plan step

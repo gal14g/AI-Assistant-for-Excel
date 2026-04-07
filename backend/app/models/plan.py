@@ -65,6 +65,32 @@ class StepAction(str, Enum):
     subtotals = "subtotals"
     transpose = "transpose"
     namedRange = "namedRange"
+    # --- New actions (batch 2) ---
+    fuzzyMatch = "fuzzyMatch"
+    deleteRowsByCondition = "deleteRowsByCondition"
+    splitByGroup = "splitByGroup"
+    lookupAll = "lookupAll"
+    regexReplace = "regexReplace"
+    coerceDataType = "coerceDataType"
+    normalizeDates = "normalizeDates"
+    deduplicateAdvanced = "deduplicateAdvanced"
+    joinSheets = "joinSheets"
+    frequencyDistribution = "frequencyDistribution"
+    runningTotal = "runningTotal"
+    rankColumn = "rankColumn"
+    topN = "topN"
+    percentOfTotal = "percentOfTotal"
+    growthRate = "growthRate"
+    consolidateAllSheets = "consolidateAllSheets"
+    cloneSheetStructure = "cloneSheetStructure"
+    addReportHeader = "addReportHeader"
+    alternatingRowFormat = "alternatingRowFormat"
+    quickFormat = "quickFormat"
+    refreshPivot = "refreshPivot"
+    pivotCalculatedField = "pivotCalculatedField"
+    addDropdownControl = "addDropdownControl"
+    conditionalFormula = "conditionalFormula"
+    spillFormula = "spillFormula"
 
 
 # --- Step parameter models ---
@@ -477,6 +503,196 @@ class NamedRangeParams(BaseModel):
     sheetName: Optional[str] = None
 
 
+# --- New param models (batch 2) ---
+
+
+class FuzzyMatchParams(BaseModel):
+    lookupRange: str
+    sourceRange: str
+    outputRange: str
+    threshold: Optional[float] = 0.7
+    writeValue: Optional[str] = None
+    returnBestMatch: Optional[bool] = True
+
+
+class DeleteRowsByConditionParams(BaseModel):
+    range: str
+    column: int  # 1-based
+    condition: Literal["blank", "notBlank", "equals", "notEquals", "contains", "greaterThan", "lessThan"]
+    value: Optional[Union[str, int, float]] = None
+    hasHeaders: Optional[bool] = True
+
+
+class SplitByGroupParams(BaseModel):
+    dataRange: str
+    groupByColumn: int  # 1-based
+    keepHeaders: Optional[bool] = True
+
+
+class LookupAllParams(BaseModel):
+    lookupRange: str
+    sourceRange: str
+    returnColumn: int  # 1-based
+    outputRange: str
+    delimiter: Optional[str] = ", "
+    matchType: Optional[Literal["exact", "contains"]] = "exact"
+
+
+class RegexReplaceParams(BaseModel):
+    range: str
+    pattern: str
+    replacement: str
+    flags: Optional[str] = "gi"
+
+
+class CoerceDataTypeParams(BaseModel):
+    range: str
+    targetType: Literal["number", "text", "date"]
+    dateFormat: Optional[str] = None
+    locale: Optional[str] = None
+
+
+class NormalizeDatesParams(BaseModel):
+    range: str
+    outputFormat: str  # e.g. "yyyy-mm-dd", "dd/mm/yyyy"
+    inputFormat: Optional[str] = None
+
+
+class DeduplicateAdvancedParams(BaseModel):
+    range: str
+    keyColumns: list[int]  # 1-based
+    keepStrategy: Literal["first", "last", "mostComplete", "newest"] = "first"
+    dateColumn: Optional[int] = None  # 1-based, for "newest"
+    hasHeaders: Optional[bool] = True
+
+
+class JoinSheetsParams(BaseModel):
+    leftRange: str
+    rightRange: str
+    leftKeyColumn: int  # 1-based
+    rightKeyColumn: int  # 1-based
+    joinType: Literal["inner", "left", "right", "full"] = "inner"
+    outputRange: str
+
+
+class FrequencyDistributionParams(BaseModel):
+    sourceRange: str
+    outputRange: str
+    sortBy: Optional[Literal["value", "frequency"]] = "frequency"
+    ascending: Optional[bool] = False
+    includePercent: Optional[bool] = True
+
+
+class RunningTotalParams(BaseModel):
+    sourceRange: str
+    outputRange: str
+    hasHeaders: Optional[bool] = True
+
+
+class RankColumnParams(BaseModel):
+    sourceRange: str
+    outputRange: str
+    order: Optional[Literal["descending", "ascending"]] = "descending"
+    hasHeaders: Optional[bool] = True
+
+
+class TopNParams(BaseModel):
+    dataRange: str
+    valueColumn: int  # 1-based
+    n: int
+    position: Optional[Literal["top", "bottom"]] = "top"
+    outputRange: str
+    hasHeaders: Optional[bool] = True
+
+
+class PercentOfTotalParams(BaseModel):
+    sourceRange: str
+    outputRange: str
+    hasHeaders: Optional[bool] = True
+    formatAsPercent: Optional[bool] = True
+
+
+class GrowthRateParams(BaseModel):
+    sourceRange: str
+    outputRange: str
+    hasHeaders: Optional[bool] = True
+    formatAsPercent: Optional[bool] = True
+
+
+class ConsolidateAllSheetsParams(BaseModel):
+    outputSheetName: Optional[str] = "Combined"
+    hasHeaders: Optional[bool] = True
+    excludeSheets: Optional[list[str]] = None
+
+
+class CloneSheetStructureParams(BaseModel):
+    sourceSheet: str
+    newSheetName: str
+
+
+class AddReportHeaderParams(BaseModel):
+    title: str
+    sheetName: Optional[str] = None
+    range: Optional[str] = None
+    fontSize: Optional[int] = 16
+    fillColor: Optional[str] = "#4472C4"
+    fontColor: Optional[str] = "#FFFFFF"
+    bold: Optional[bool] = True
+
+
+class AlternatingRowFormatParams(BaseModel):
+    range: str
+    evenColor: Optional[str] = "#F2F2F2"
+    oddColor: Optional[str] = "#FFFFFF"
+    hasHeaders: Optional[bool] = True
+
+
+class QuickFormatParams(BaseModel):
+    range: str
+    freezeHeader: Optional[bool] = True
+    addFilters: Optional[bool] = True
+    autoFit: Optional[bool] = True
+    zebraStripe: Optional[bool] = False
+    headerColor: Optional[str] = "#4472C4"
+    headerFontColor: Optional[str] = "#FFFFFF"
+
+
+class RefreshPivotParams(BaseModel):
+    pivotName: Optional[str] = None
+    sheetName: Optional[str] = None
+
+
+class PivotCalculatedFieldParams(BaseModel):
+    pivotName: str
+    sheetName: Optional[str] = None
+    fieldName: str
+    formula: str
+
+
+class AddDropdownControlParams(BaseModel):
+    cell: str
+    listSource: str
+    promptMessage: Optional[str] = None
+    sheetName: Optional[str] = None
+
+
+class ConditionalFormulaParams(BaseModel):
+    range: str
+    conditionColumn: int  # 1-based
+    condition: Literal["blank", "notBlank", "equals", "notEquals", "contains", "greaterThan", "lessThan"]
+    conditionValue: Optional[Union[str, int, float]] = None
+    trueFormula: str  # template with {row} placeholder
+    falseFormula: str  # template with {row} placeholder
+    outputRange: str
+    hasHeaders: Optional[bool] = True
+
+
+class SpillFormulaParams(BaseModel):
+    cell: str
+    formula: str
+    sheetName: Optional[str] = None
+
+
 # --- Plan step ---
 
 
@@ -556,4 +772,30 @@ ACTION_PARAM_MODELS: dict[StepAction, type[BaseModel]] = {
     StepAction.subtotals:            SubtotalsParams,
     StepAction.transpose:            TransposeParams,
     StepAction.namedRange:           NamedRangeParams,
+    # --- New actions (batch 2) ---
+    StepAction.fuzzyMatch:              FuzzyMatchParams,
+    StepAction.deleteRowsByCondition:   DeleteRowsByConditionParams,
+    StepAction.splitByGroup:            SplitByGroupParams,
+    StepAction.lookupAll:               LookupAllParams,
+    StepAction.regexReplace:            RegexReplaceParams,
+    StepAction.coerceDataType:          CoerceDataTypeParams,
+    StepAction.normalizeDates:          NormalizeDatesParams,
+    StepAction.deduplicateAdvanced:     DeduplicateAdvancedParams,
+    StepAction.joinSheets:              JoinSheetsParams,
+    StepAction.frequencyDistribution:   FrequencyDistributionParams,
+    StepAction.runningTotal:            RunningTotalParams,
+    StepAction.rankColumn:              RankColumnParams,
+    StepAction.topN:                    TopNParams,
+    StepAction.percentOfTotal:          PercentOfTotalParams,
+    StepAction.growthRate:              GrowthRateParams,
+    StepAction.consolidateAllSheets:    ConsolidateAllSheetsParams,
+    StepAction.cloneSheetStructure:     CloneSheetStructureParams,
+    StepAction.addReportHeader:         AddReportHeaderParams,
+    StepAction.alternatingRowFormat:    AlternatingRowFormatParams,
+    StepAction.quickFormat:             QuickFormatParams,
+    StepAction.refreshPivot:            RefreshPivotParams,
+    StepAction.pivotCalculatedField:    PivotCalculatedFieldParams,
+    StepAction.addDropdownControl:      AddDropdownControlParams,
+    StepAction.conditionalFormula:      ConditionalFormulaParams,
+    StepAction.spillFormula:            SpillFormulaParams,
 }
