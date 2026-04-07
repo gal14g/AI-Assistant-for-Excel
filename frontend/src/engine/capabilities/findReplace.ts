@@ -56,11 +56,22 @@ async function handler(
   // If address includes a sheet qualifier (e.g. "תוכנה!A:I"), use resolveRange
   // so it is correctly resolved regardless of active sheet.
   // If address is plain (e.g. "A1:C10"), use the already-resolved sheet object.
-  const range = address
+  const rawRange = address
     ? address.includes("!")
       ? resolveRange(context, address)
       : sheet.getRange(address)
     : sheet.getUsedRange();
+
+  // Clip to used range — full-column refs like "K:K" would try to load ~1M rows
+  // and time out or crash. getUsedRange(false) returns only the bounding rectangle
+  // of cells with data (same pattern as cleanupText, fillBlanks, matchRecords).
+  let range: Excel.Range;
+  try {
+    range = rawRange.getUsedRange(false);
+  } catch {
+    range = rawRange;
+  }
+
   // Load both raw values (numbers for dates) and displayed text (what the user sees).
   // Matching is done against text so "19/04/2026" matches regardless of whether the
   // cell stores a serial number or a literal string.
@@ -70,6 +81,7 @@ async function handler(
   const values = range.values ?? [];
   const texts = range.text ?? [];
   let replacements = 0;
+  let skipped = 0;
 
   const findStr = matchCase ? find : find.toLowerCase();
 
@@ -132,43 +144,61 @@ async function handler(
       const rawVal = valRow[ci];
       const cell = range.getCell(ri, ci);
 
-      // For error cells, always clear the cell first to remove the error,
-      // then write the replacement value.
-      const rawStr = typeof rawVal === "string" ? rawVal : "";
-      const isErrorCell = rawStr.startsWith("#") || displayText.startsWith("#");
+      // Wrap each cell operation in try-catch so a single failure (e.g. merged
+      // cell, protected cell) doesn't abort the entire find-replace batch.
+      try {
+        // For error cells, always clear the cell first to remove the error,
+        // then write the replacement value.
+        const rawStr = typeof rawVal === "string" ? rawVal : "";
+        const isErrorCell = rawStr.startsWith("#") || displayText.startsWith("#");
 
-      if (isErrorCell) {
-        // Clear the error cell first (formulas/values) then write replacement
-        cell.clear("Contents" as Excel.ClearApplyTo);
-        if (replace !== "") {
+        if (isErrorCell) {
+          // Clear the error cell first (formulas/values) then write replacement
+          cell.clear("Contents" as Excel.ClearApplyTo);
+          if (replace !== "") {
+            cell.values = [[replace]];
+          }
+        } else if (typeof rawVal === "number" && replaceSerial != null) {
+          // Date serial → date serial replacement
+          cell.values = [[replaceSerial]];
+        } else if (isFormula) {
+          cell.formulas = [[replace]];
+        } else if (matchEntireCell) {
           cell.values = [[replace]];
+        } else {
+          // Partial string replacement within the displayed text
+          const regex = new RegExp(escapeRegex(find), matchCase ? "g" : "gi");
+          const original = typeof rawVal === "string" ? rawVal : displayText;
+          cell.values = [[original.replace(regex, replace)]];
         }
-      } else if (typeof rawVal === "number" && replaceSerial != null) {
-        // Date serial → date serial replacement
-        cell.values = [[replaceSerial]];
-      } else if (isFormula) {
-        cell.formulas = [[replace]];
-      } else if (matchEntireCell) {
-        cell.values = [[replace]];
-      } else {
-        // Partial string replacement within the displayed text
-        const regex = new RegExp(escapeRegex(find), matchCase ? "g" : "gi");
-        const original = typeof rawVal === "string" ? rawVal : displayText;
-        cell.values = [[original.replace(regex, replace)]];
-      }
 
-      replacements++;
+        replacements++;
+      } catch {
+        skipped++;
+      }
     }
   }
 
   if (replacements > 0) {
-    await context.sync();
+    try {
+      await context.sync();
+    } catch (syncErr: unknown) {
+      // Some queued cell writes may fail at sync time (e.g. merged cells).
+      // Retry one-by-one would be expensive; report the partial failure.
+      const msg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+      return {
+        stepId: "",
+        status: "error",
+        message: `Found ${replacements} match(es) but sync failed: ${msg}. The range may contain merged or protected cells.`,
+      };
+    }
   }
 
+  const skipNote = skipped > 0 ? ` (${skipped} cell(s) skipped — merged or protected)` : "";
   return {
     stepId: "",
     status: "success",
-    message: `Replaced ${replacements} occurrence(s) of "${find}" with "${replace}"`,
+    message: `Replaced ${replacements} occurrence(s) of "${find}" with "${replace}"${skipNote}`,
   };
 }
 

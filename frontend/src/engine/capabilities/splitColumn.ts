@@ -60,25 +60,33 @@ async function handler(
 
   const startColIdx = colToIndex(outputStartColumn);
 
-  // Write headers if provided
-  if (params.outputHeaders?.length) {
-    for (let c = 0; c < params.outputHeaders.length; c++) {
-      ws.getRange(`${indexToCol(startColIdx + c)}${startRow}`).values = [[params.outputHeaders[c]]];
-    }
-  }
+  // Build the entire output grid in memory, then write as a single batch.
+  // This avoids per-cell writes which are slow and can fail on merged cells.
+  const outGrid: (string | number | boolean | null)[][] = [];
 
-  // Split each row
   for (let i = 0; i < vals.length; i++) {
     const cell = String(vals[i][0] ?? "");
     const splitParts = cell.split(delimiter).slice(0, parts);
-    // Pad to requested number of parts
     while (splitParts.length < parts) splitParts.push("");
-    for (let c = 0; c < parts; c++) {
-      ws.getRange(`${indexToCol(startColIdx + c)}${startRow + i}`).values = [[splitParts[c].trim()]];
+    outGrid.push(splitParts.map((p) => p.trim()));
+  }
+
+  // Overwrite with headers if provided
+  if (params.outputHeaders?.length && outGrid.length > 0) {
+    for (let c = 0; c < Math.min(params.outputHeaders.length, parts); c++) {
+      outGrid[0][c] = params.outputHeaders[c];
     }
   }
 
-  await context.sync();
+  // Single batch write — much faster and safer than per-cell writes
+  const outAddr = `${indexToCol(startColIdx)}${startRow}:${indexToCol(startColIdx + parts - 1)}${startRow + outGrid.length - 1}`;
+  try {
+    ws.getRange(outAddr).values = outGrid as any;
+    await context.sync();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { stepId: "", status: "error", message: `Failed to write split results: ${msg}. Range may contain merged or protected cells.` };
+  }
 
   // Auto-fit the new columns
   const addr = stripWorkbookQualifier(sourceRange);

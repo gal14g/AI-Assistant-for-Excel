@@ -83,11 +83,22 @@ async function handler(
   // Insert blank rows to make room if needed (out.length > vals.length)
   const extraRows = out.length - vals.length;
   if (extraRows > 0) {
-    ws.getRange(`${startRow + vals.length}:${startRow + vals.length + extraRows - 1}`).insert(Excel.InsertShiftDirection.down);
+    try {
+      ws.getRange(`${startRow + vals.length}:${startRow + vals.length + extraRows - 1}`).insert(Excel.InsertShiftDirection.down);
+      await context.sync();
+    } catch (insertErr: unknown) {
+      const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
+      return { stepId: "", status: "error", message: `Failed to insert subtotal rows: ${msg}. Range may contain merged cells.` };
+    }
   }
 
-  ws.getRange(`${startCol}${startRow}`).getResizedRange(out.length - 1, (out[0]?.length ?? 1) - 1).values = out as any;
-  await context.sync();
+  try {
+    ws.getRange(`${startCol}${startRow}`).getResizedRange(out.length - 1, (out[0]?.length ?? 1) - 1).values = out as any;
+    await context.sync();
+  } catch (writeErr: unknown) {
+    const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+    return { stepId: "", status: "error", message: `Failed to write subtotals: ${msg}. Range may contain merged or protected cells.` };
+  }
 
   const subtotalCount = out.filter((r) => String(r[grpIdx]).endsWith(subtotalLabel)).length;
   return {

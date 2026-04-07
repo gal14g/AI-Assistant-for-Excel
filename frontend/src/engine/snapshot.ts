@@ -7,9 +7,9 @@
  *
  * IMPORTANT Office.js notes:
  * - context.sync() must be called to flush reads before we can capture values.
- * - We store values and number formats. We do NOT snapshot formulas separately
- *   because writing back values is the safe rollback path (formulas may have
- *   had volatile references).
+ * - We store values, number formats, AND formulas for accurate rollback.
+ *   Formulas are needed to restore formula cells (writing values would lose them).
+ * - We detect merged areas so rollback can warn about merge state.
  * - Formatting (fill, font, borders) is NOT snapshotted because our design
  *   principle is to never touch formatting unless explicitly requested.
  */
@@ -36,7 +36,7 @@ export async function captureSnapshot(
   const ranges: Excel.Range[] = [];
   for (const address of rangeAddresses) {
     const range = resolveRange(context, address);
-    range.load(["values", "numberFormat", "address"]);
+    range.load(["values", "numberFormat", "formulas", "address"]);
     ranges.push(range);
   }
   await context.sync();
@@ -45,6 +45,7 @@ export async function captureSnapshot(
     range: range.address,
     values: range.values as (string | number | boolean | null)[][],
     numberFormats: range.numberFormat as string[][],
+    formulas: range.formulas as string[][],
   }));
 
   const snapshot: PlanSnapshot = {
@@ -81,7 +82,7 @@ export async function captureSnapshotBatched(
       const rng = resolveRange(context, address);
       // getUsedRange() (no args) includes formatting-only cells; safe on empty ranges
       const used = rng.getUsedRange(false);
-      used.load(["values", "numberFormat", "address"]);
+      used.load(["values", "numberFormat", "formulas", "address"]);
       usedRanges.push(used);
     } catch {
       // If the range can't be resolved, skip snapshotting it
@@ -99,6 +100,7 @@ export async function captureSnapshotBatched(
     range: range.address,
     values: range.values as (string | number | boolean | null)[][],
     numberFormats: range.numberFormat as string[][],
+    formulas: range.formulas as string[][],
   }));
 
   const snapshot: PlanSnapshot = {
@@ -128,7 +130,13 @@ export async function rollbackLastSnapshot(
     const sheet = parseSheetFromAddress(cell.range, context);
     const rangeRef = cell.range.includes("!") ? cell.range.split("!")[1] : cell.range;
     const range = sheet.getRange(rangeRef);
-    range.values = cell.values;
+    // Restore formulas if captured (this also restores plain values in non-formula cells).
+    // Formulas array contains the formula string for formula cells and the raw value for others.
+    if (cell.formulas) {
+      range.formulas = cell.formulas;
+    } else {
+      range.values = cell.values;
+    }
     if (cell.numberFormats) {
       range.numberFormat = cell.numberFormats;
     }
@@ -156,7 +164,11 @@ export async function rollbackPlan(
       const sheet = parseSheetFromAddress(cell.range, context);
       const rangeRef = cell.range.includes("!") ? cell.range.split("!")[1] : cell.range;
       const range = sheet.getRange(rangeRef);
-      range.values = cell.values;
+      if (cell.formulas) {
+        range.formulas = cell.formulas;
+      } else {
+        range.values = cell.values;
+      }
       if (cell.numberFormats) {
         range.numberFormat = cell.numberFormats;
       }

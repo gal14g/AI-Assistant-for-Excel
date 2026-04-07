@@ -425,21 +425,35 @@ async function compositeKeyMatch(
   // Write writeValue to the EXACT sheet row of each matched lookup row.
   // Non-matched rows are left completely untouched.
   let matchCount = 0;
+  let skippedCount = 0;
   for (let i = 0; i < filledLookup.length; i++) {
     const row = filledLookup[i];
     if (isEmptyRow(row) && lookupWasEmpty[i]) continue; // genuine leading gap — skip
     if (matches(toKey(row))) {
       const sheetRow = lookupStartRow + i;
-      outWs.getRange(`${outCol}${sheetRow}`).values = [[writeValue]];
-      matchCount++;
+      try {
+        outWs.getRange(`${outCol}${sheetRow}`).values = [[writeValue]];
+        matchCount++;
+      } catch {
+        skippedCount++;
+      }
     }
   }
-  await context.sync();
+  try {
+    await context.sync();
+  } catch (syncErr: unknown) {
+    const msg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+    return {
+      stepId: "",
+      status: "error",
+      message: `Matched ${matchCount} rows but sync failed: ${msg}. Output range may contain merged or protected cells.`,
+    };
+  }
 
   return {
     stepId: "",
     status: "success",
-    message: `Composite match: ${matchCount}/${filledLookup.length} rows matched — wrote "${writeValue}" to ${outSheetName ?? "active sheet"} column ${outCol}`,
+    message: `Composite match: ${matchCount}/${filledLookup.length} rows matched — wrote "${writeValue}" to ${outSheetName ?? "active sheet"} column ${outCol}${skippedCount > 0 ? ` (${skippedCount} skipped — merged/protected)` : ""}`,
   };
 }
 

@@ -982,6 +982,10 @@ export interface CellSnapshot {
   values: (string | number | boolean | null)[][];
   /** We store number formats to restore them if needed */
   numberFormats?: string[][];
+  /** Original formulas — needed to restore formula cells on undo */
+  formulas?: string[][];
+  /** Whether the range contained merged areas (for logging/awareness) */
+  hasMergedCells?: boolean;
 }
 
 export interface PlanSnapshot {

@@ -57,16 +57,28 @@ async function handler(
   }
 
   if (highlightDiffs) {
-    // Highlight differing cells in rangeA
+    // Highlight differing cells in rangeA.
+    // Wrap in try-catch — merged or protected cells can cause format writes to fail.
+    let highlighted = 0;
     for (const d of diffs) {
-      const cell = rngA.getCell(d.row - 1, d.col - 1);
-      cell.format.fill.color = highlightColor;
+      try {
+        const cell = rngA.getCell(d.row - 1, d.col - 1);
+        cell.format.fill.color = highlightColor;
+        highlighted++;
+      } catch {
+        // Skip cells that can't be formatted (e.g. part of a merged area)
+      }
     }
-    await context.sync();
+    try {
+      await context.sync();
+    } catch (syncErr: unknown) {
+      const msg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+      return { stepId: "", status: "error", message: `Highlighting failed: ${msg}. Range may contain merged cells.` };
+    }
     return {
       stepId: "",
       status: "success",
-      message: `Highlighted ${diffs.length} difference(s) in ${rangeA}`,
+      message: `Highlighted ${highlighted} difference(s) in ${rangeA}${highlighted < diffs.length ? ` (${diffs.length - highlighted} skipped — merged/protected)` : ""}`,
     };
   }
 

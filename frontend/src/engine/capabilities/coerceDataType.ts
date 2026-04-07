@@ -40,7 +40,14 @@ async function handler(
   }
 
   options.onProgress?.("Reading range...");
-  const rng = resolveRange(context, range);
+  const rawRng = resolveRange(context, range);
+  // Clip to used range — full-column refs like "A:A" would load ~1M rows
+  let rng: Excel.Range;
+  try {
+    rng = rawRng.getUsedRange(false);
+  } catch {
+    rng = rawRng;
+  }
   rng.load("values");
   await context.sync();
 
