@@ -1,5 +1,5 @@
 /**
- * Core type definitions for the Excel AI Copilot execution engine.
+ * Core type definitions for the AI Assistant For Excel execution engine.
  *
  * These types define the plan schema that the LLM planner produces,
  * the executor consumes, and the validator checks.

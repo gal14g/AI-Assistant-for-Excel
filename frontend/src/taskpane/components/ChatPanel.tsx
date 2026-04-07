@@ -204,7 +204,7 @@ export const ChatPanel: React.FC = () => {
               <rect x="9" y="9" width="6" height="6" rx="1" fill="white" fillOpacity="0.9"/>
             </svg>
           </div>
-          <div className="cc-header-title">Copilot</div>
+          <div className="cc-header-title">Assistant</div>
         </div>
         <div className="cc-header-actions">
           <button
@@ -294,7 +294,7 @@ export const ChatPanel: React.FC = () => {
             <div className="cc-thinking-dot" />
             <div className="cc-thinking-dot" />
           </div>
-          Copilot is thinking…
+          Assistant is thinking…
         </div>
       )}
 

@@ -137,7 +137,7 @@ export const ChatInput: React.FC<Props> = ({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder="Ask Copilot… select a range in Excel, then Ctrl+V to insert"
+          placeholder="Ask Assistant… select a range in Excel, then Ctrl+V to insert"
           rows={1}
           dir="auto"
         />

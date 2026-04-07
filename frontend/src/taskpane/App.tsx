@@ -1,5 +1,5 @@
 /**
- * App – Root component for the Excel AI Copilot task pane.
+ * App – Root component for the AI Assistant For Excel task pane.
  */
 
 import React from "react";

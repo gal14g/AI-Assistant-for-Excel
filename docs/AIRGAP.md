@@ -1,6 +1,6 @@
 # Air-gapped / enclosed-network deployment
 
-Everything that needs to change to run Excel AI Copilot in a network with
+Everything that needs to change to run AI Assistant For Excel in a network with
 zero outbound internet access.
 
 ---
@@ -40,9 +40,9 @@ Then build with the local path:
 
 ```bash
 docker build \
-  --build-arg FRONTEND_URL="https://excel-copilot.apps.cluster.example.com" \
+  --build-arg FRONTEND_URL="https://excel-assistant.apps.cluster.example.com" \
   --build-arg OFFICE_JS_SRC=/assets/office.js \
-  -t your-registry/excel-copilot:v1.1.0 .
+  -t your-registry/excel-assistant:v1.1.0 .
 ```
 
 That's it — webpack's `HtmlWebpackPlugin` injects the value into
@@ -127,19 +127,19 @@ Hub base images). You need one of:
 ```bash
 # On internet-connected host
 docker build \
-  --build-arg FRONTEND_URL="https://excel-copilot.apps.enclosed.example.com" \
+  --build-arg FRONTEND_URL="https://excel-assistant.apps.enclosed.example.com" \
   --build-arg OFFICE_JS_SRC=/assets/office.js \
-  -t excel-copilot:v1.1.0 .
+  -t excel-assistant:v1.1.0 .
 
 # Save to a tar file
-docker save excel-copilot:v1.1.0 | gzip > excel-copilot-v1.1.0.tar.gz
+docker save excel-assistant:v1.1.0 | gzip > excel-assistant-v1.1.0.tar.gz
 
 # Transfer tar file across the air gap (USB, secure file transfer, etc.)
 
 # On enclosed host: load and tag for internal registry
-docker load < excel-copilot-v1.1.0.tar.gz
-docker tag excel-copilot:v1.1.0 internal-registry.corp/excel-copilot:v1.1.0
-docker push internal-registry.corp/excel-copilot:v1.1.0
+docker load < excel-assistant-v1.1.0.tar.gz
+docker tag excel-assistant:v1.1.0 internal-registry.corp/excel-assistant:v1.1.0
+docker push internal-registry.corp/excel-assistant:v1.1.0
 ```
 
 ### Option B: OpenShift internal build (BuildConfig)
@@ -148,8 +148,8 @@ If your cluster has an internal mirror of Docker Hub + npm + PyPI (e.g. Nexus,
 Artifactory), OpenShift can build from source:
 
 ```bash
-oc new-build --binary --name=excel-copilot --strategy=docker
-oc start-build excel-copilot --from-dir=. --follow
+oc new-build --binary --name=excel-assistant --strategy=docker
+oc start-build excel-assistant --from-dir=. --follow
 ```
 
 This requires mirror configs in your cluster. Most enclosed networks already

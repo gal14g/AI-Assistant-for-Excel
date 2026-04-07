@@ -2,16 +2,16 @@
 # the app receives plain HTTP on port 8080.
 #
 # Replace the host with your actual cluster domain.
-# Users access: https://excel-copilot.apps.<cluster-domain>/manifest.xml
+# Users access: https://excel-assistant.apps.<cluster-domain>/manifest.xml
 # to install the Excel add-in.
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: excel-copilot
+  name: excel-assistant
   labels:
-    app: excel-copilot
-    app.kubernetes.io/name: excel-copilot
-    app.kubernetes.io/part-of: excel-ai-copilot
+    app: excel-assistant
+    app.kubernetes.io/name: excel-assistant
+    app.kubernetes.io/part-of: ai-assistant-for-excel
   annotations:
     haproxy.router.openshift.io/hsts_header: "max-age=31536000;includeSubDomains"
     haproxy.router.openshift.io/timeout: 120s
@@ -19,10 +19,10 @@ metadata:
     haproxy.router.openshift.io/balance: leastconn
 spec:
   # Uncomment and set your cluster domain:
-  # host: excel-copilot.apps.your-cluster.example.com
+  # host: excel-assistant.apps.your-cluster.example.com
   to:
     kind: Service
-    name: excel-copilot
+    name: excel-assistant
     weight: 100
   port:
     targetPort: http

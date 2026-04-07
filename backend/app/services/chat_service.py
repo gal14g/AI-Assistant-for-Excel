@@ -1,5 +1,5 @@
 """
-Chat service – conversational AI layer for Excel AI Copilot.
+Chat service – conversational AI layer for AI Assistant For Excel.
 
 A single LLM call handles both routing and execution planning.
 The LLM decides whether to:
@@ -36,7 +36,7 @@ def _build_chat_system_prompt(relevant_actions: tuple[str, ...] | None = None) -
     else:
         filtered = CAPABILITY_DESCRIPTIONS
     caps = "\n".join(f"  - {k}: {v}" for k, v in filtered.items())
-    return f"""You are Excel AI Copilot, an intelligent assistant for Microsoft Excel.
+    return f"""You are AI Assistant For Excel, an intelligent assistant for Microsoft Excel.
 
 You help users in two ways:
 1. ANSWER QUESTIONS — explain Excel concepts, formulas, best practices, what you can do, etc.
@@ -444,7 +444,7 @@ def _build_retry_messages(
     actions = relevant_actions or list(CAPABILITY_DESCRIPTIONS.keys())
     actions_str = ", ".join(actions)
 
-    system = f"""You are Excel AI Copilot. Respond with ONE JSON object only.
+    system = f"""You are AI Assistant For Excel. Respond with ONE JSON object only.
 
 FORMAT A — for questions/greetings:
 {{"responseType":"message","message":"<your reply>","plans":null}}

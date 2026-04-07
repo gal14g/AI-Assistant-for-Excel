@@ -126,7 +126,7 @@ def _normalise_plan(plan_json: str | None) -> Any:
 def _build_openai_example(row: dict) -> dict:
     """Return a ChatML messages list for OpenAI SFT format."""
     system_prompt = (
-        "You are Excel AI Copilot, an expert Excel assistant. "
+        "You are AI Assistant For Excel, an expert Excel assistant. "
         "When the user asks for Excel operations, respond with a structured execution plan. "
         "For questions or clarifications, reply conversationally."
     )

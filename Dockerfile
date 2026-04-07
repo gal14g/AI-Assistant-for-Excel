@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# Excel AI Copilot — Multi-stage Dockerfile
+# AI Assistant For Excel — Multi-stage Dockerfile
 #
 # Stage 1 (frontend-build): Node.js — compiles the React/Webpack add-in.
 #   FRONTEND_URL is baked into manifest.xml at build time.
@@ -12,8 +12,8 @@
 #   All secrets/keys are injected at runtime via environment variables.
 #
 # Usage:
-#   Build:  docker build --build-arg FRONTEND_URL=https://your-app.example.com -t excel-ai-copilot .
-#   Run:    docker run -p 8080:8080 -e LLM_API_KEY=sk-... excel-ai-copilot
+#   Build:  docker build --build-arg FRONTEND_URL=https://your-app.example.com -t ai-assistant-for-excel .
+#   Run:    docker run -p 8080:8080 -e LLM_API_KEY=sk-... ai-assistant-for-excel
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Stage 1: Build frontend ───────────────────────────────────────────────────
@@ -51,8 +51,8 @@ RUN python -m venv /deps/venv && \
 # ── Stage 3: Final production image ──────────────────────────────────────────
 FROM python:3.11-slim AS final
 
-LABEL org.opencontainers.image.source="https://github.com/your-org/excel-ai-copilot"
-LABEL org.opencontainers.image.description="Excel AI Copilot - Natural language spreadsheet assistant"
+LABEL org.opencontainers.image.source="https://github.com/your-org/ai-assistant-for-excel"
+LABEL org.opencontainers.image.description="AI Assistant For Excel - Natural language spreadsheet assistant"
 LABEL org.opencontainers.image.version="1.1.0"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

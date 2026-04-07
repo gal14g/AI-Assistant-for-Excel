@@ -1,6 +1,6 @@
 # Production Security Checklist
 
-Pre-deployment checklist for hardening the Excel AI Copilot.
+Pre-deployment checklist for hardening the AI Assistant For Excel.
 
 ---
 
@@ -23,7 +23,7 @@ Pre-deployment checklist for hardening the Excel AI Copilot.
 
 **Config:** Set `CORS_ORIGINS` in `openshift/configmap.yaml` to your actual add-in URL:
 ```
-CORS_ORIGINS: '["https://excel-copilot.apps.your-cluster.example.com"]'
+CORS_ORIGINS: '["https://excel-assistant.apps.your-cluster.example.com"]'
 ```
 
 ### 3. Rate Limiting

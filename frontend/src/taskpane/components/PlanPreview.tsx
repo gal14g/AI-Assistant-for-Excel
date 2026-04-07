@@ -1,5 +1,5 @@
 /**
- * PlanPreview – Action card shown before executing a plan. Microsoft Copilot style.
+ * PlanPreview – Action card shown before executing a plan.
  */
 
 import React from "react";

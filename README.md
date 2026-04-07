@@ -1,10 +1,9 @@
-# Excel AI Copilot
+# AI Assistant For Excel
 
 > **Disclaimer**
 > This project is **not affiliated with, endorsed by, or sponsored by Microsoft Corporation** in any way.
 > It is a fully independent, open-source project.
 > "Excel" and "Microsoft 365" are trademarks of Microsoft Corporation.
-> "Copilot" as used here refers to this project's own AI assistant functionality and has no connection to Microsoft Copilot or GitHub Copilot.
 > This add-in uses Microsoft's public [Office Add-in APIs](https://learn.microsoft.com/en-us/office/dev/add-ins/) — the same APIs available to any third-party developer.
 
 ---
@@ -18,19 +17,20 @@ Works on **macOS, Windows, and Linux**. Runs fully offline when paired with a lo
 ## Table of Contents
 
 1. [What it does](#what-it-does)
-2. [Architecture overview](#architecture-overview)
-3. [Project structure](#project-structure)
-4. [Local development](#local-development)
-5. [Making changes](#making-changes)
-6. [Switching LLM providers](#switching-llm-providers)
-7. [Running on Windows](#running-on-windows)
-8. [Running fully offline (air-gapped networks)](#running-fully-offline-air-gapped-networks)
-9. [Deploy to OpenShift](#deploy-to-openshift)
-10. [Installing the add-in in Excel](#installing-the-add-in-in-excel)
-11. [CI/CD pipeline](#cicd-pipeline)
-12. [Security](#security)
-13. [Migrating to a production database](#migrating-to-a-production-database)
-14. [Configuration reference](#configuration-reference)
+2. [Documentation](#documentation)
+3. [Architecture overview](#architecture-overview)
+4. [Project structure](#project-structure)
+5. [Local development](#local-development)
+6. [Making changes](#making-changes)
+7. [Switching LLM providers](#switching-llm-providers)
+8. [Running on Windows](#running-on-windows)
+9. [Running fully offline (air-gapped networks)](#running-fully-offline-air-gapped-networks)
+10. [Deploy to OpenShift](#deploy-to-openshift)
+11. [Installing the add-in in Excel](#installing-the-add-in-in-excel)
+12. [CI/CD pipeline](#cicd-pipeline)
+13. [Security](#security)
+14. [Migrating to a production database](#migrating-to-a-production-database)
+15. [Configuration reference](#configuration-reference)
 
 ---
 
@@ -48,7 +48,21 @@ Works on **macOS, Windows, and Linux**. Runs fully offline when paired with a lo
 - Hebrew and English support with full RTL
 - Runs fully offline with Ollama + the bundled embedding model
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a complete architectural overview.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a complete architectural overview with Mermaid diagrams.
+
+---
+
+## Documentation
+
+Detailed guides live in the [`docs/`](docs/) folder:
+
+| Document | Description |
+|---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full system architecture with Mermaid diagrams — request flow, component map, data models, execution engine |
+| [ADDING_ACTIONS.md](docs/ADDING_ACTIONS.md) | Step-by-step guide to adding new tools/actions (all 9 files to touch) |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deploying to OpenShift — build, push, configure, verify, update |
+| [AIRGAP.md](docs/AIRGAP.md) | Running on enclosed/air-gapped networks with zero internet access |
+| [SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) | Pre-deployment security hardening checklist and follow-ups |
 
 ---
 
@@ -82,7 +96,7 @@ Backend (FastAPI + OpenAI SDK)
 ChatResponse -> user picks a plan option -> executor runs it via Office.js
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed breakdown.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a detailed breakdown.
 
 When deployed to OpenShift, a single container serves both the API and the frontend:
 
@@ -106,7 +120,7 @@ Container :8080
 ## Project structure
 
 ```
-excel-ai-copilot/
+ai-assistant-for-excel/
 |
 |-- .env.example              All environment variables documented
 |-- .env                      Your local config (git-ignored)
@@ -115,7 +129,12 @@ excel-ai-copilot/
 |-- Dockerfile                Multi-stage build (frontend + backend in one image)
 |-- docker-compose.yml        Local Docker testing
 |-- README.md                 This file
-|-- SECURITY_CHECKLIST.md     Pre-deployment security hardening guide
+|-- docs/                     All documentation
+|   |-- ARCHITECTURE.md       Full architecture with Mermaid diagrams
+|   |-- ADDING_ACTIONS.md     How to add new tools/actions
+|   |-- DEPLOYMENT.md         OpenShift deployment guide
+|   |-- AIRGAP.md             Air-gapped network deployment
+|   |-- SECURITY_CHECKLIST.md Pre-deployment security hardening guide
 |
 |-- openshift/                OpenShift/Kubernetes deployment manifests
 |   |-- deploy.sh             Quick deploy script (one command)
@@ -166,8 +185,8 @@ excel-ai-copilot/
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/gal14g/excel-ai-copilot.git
-cd excel-ai-copilot
+git clone https://github.com/gal14g/ai-assistant-for-excel.git
+cd ai-assistant-for-excel
 ```
 
 **Backend:**
@@ -226,7 +245,7 @@ In Excel: **Insert > Add-ins > Upload My Add-in** > enter:
 https://localhost:3000/manifest.xml
 ```
 
-Accept the self-signed certificate warning. The **AI Copilot** tab appears in the Excel ribbon.
+Accept the self-signed certificate warning. The **AI Assistant** tab appears in the Excel ribbon.
 
 > **Note:** Excel requires HTTPS for add-ins. The webpack dev server provides a self-signed HTTPS certificate automatically.
 
@@ -384,11 +403,11 @@ See [Switching LLM providers → Ollama](#ollama-free-local-no-api-key) for the 
 
 ```bash
 # Build and push the Docker image first
-docker build --build-arg FRONTEND_URL=https://excel-copilot.apps.my-cluster.example.com -t excel-ai-copilot .
-docker push <registry>/excel-ai-copilot:latest
+docker build --build-arg FRONTEND_URL=https://excel-assistant.apps.my-cluster.example.com -t ai-assistant-for-excel .
+docker push <registry>/ai-assistant-for-excel:latest
 
 # Deploy to OpenShift
-./openshift/deploy.sh "your-llm-api-key" "<registry>/excel-ai-copilot:latest"
+./openshift/deploy.sh "your-llm-api-key" "<registry>/ai-assistant-for-excel:latest"
 ```
 
 The script will:
@@ -403,8 +422,8 @@ The script will:
 
 ```bash
 docker build \
-  --build-arg FRONTEND_URL=https://excel-copilot.apps.my-cluster.example.com \
-  -t excel-ai-copilot:latest \
+  --build-arg FRONTEND_URL=https://excel-assistant.apps.my-cluster.example.com \
+  -t ai-assistant-for-excel:latest \
   .
 ```
 
@@ -414,16 +433,16 @@ docker build \
 
 ```bash
 # GitLab Registry (CI does this automatically):
-docker push registry.gitlab.com/your-group/excel-copilot:latest
+docker push registry.gitlab.com/your-group/excel-assistant:latest
 
 # Or Quay.io:
-docker push quay.io/your-user/excel-ai-copilot:latest
+docker push quay.io/your-user/ai-assistant-for-excel:latest
 
 # Or OpenShift built-in registry:
 oc registry login
 REGISTRY=$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}')
-docker tag excel-ai-copilot:latest $REGISTRY/<namespace>/excel-ai-copilot:latest
-docker push $REGISTRY/<namespace>/excel-ai-copilot:latest
+docker tag ai-assistant-for-excel:latest $REGISTRY/<namespace>/ai-assistant-for-excel:latest
+docker push $REGISTRY/<namespace>/ai-assistant-for-excel:latest
 ```
 
 #### Step 3 -- Configure
@@ -439,36 +458,36 @@ oc login https://your-cluster.example.com
 oc project my-namespace
 
 # Create secret
-oc create secret generic excel-copilot-secrets \
+oc create secret generic excel-assistant-secrets \
   --from-literal=LLM_API_KEY=your-api-key-here
 
 # Apply all manifests
 oc apply -f openshift/
 
 # Set your image
-oc set image deployment/excel-copilot excel-copilot=<registry>/excel-ai-copilot:latest
+oc set image deployment/excel-assistant excel-assistant=<registry>/ai-assistant-for-excel:latest
 
 # Wait for rollout
-oc rollout status deployment/excel-copilot --timeout=180s
+oc rollout status deployment/excel-assistant --timeout=180s
 ```
 
 #### Step 5 -- Verify
 
 ```bash
 # Get the route URL
-oc get route excel-copilot
+oc get route excel-assistant
 
 # Test endpoints
-curl https://excel-copilot.apps.my-cluster.example.com/health
-curl https://excel-copilot.apps.my-cluster.example.com/ready
+curl https://excel-assistant.apps.my-cluster.example.com/health
+curl https://excel-assistant.apps.my-cluster.example.com/ready
 ```
 
 ### Deploying updates
 
 ```bash
-docker build --build-arg FRONTEND_URL=https://... -t excel-ai-copilot:latest .
-docker push <registry>/excel-ai-copilot:latest
-oc rollout restart deployment/excel-copilot
+docker build --build-arg FRONTEND_URL=https://... -t ai-assistant-for-excel:latest .
+docker push <registry>/ai-assistant-for-excel:latest
+oc rollout restart deployment/excel-assistant
 ```
 
 Or use GitLab CI -- push to `main` and click the manual "Deploy" button in the pipeline.
@@ -485,9 +504,9 @@ Once deployed, the server serves the `manifest.xml` file that Excel needs to loa
 2. **Insert > Add-ins > Upload My Add-in**
 3. Enter the manifest URL:
    - Local dev: `https://localhost:3000/manifest.xml`
-   - Production: `https://excel-copilot.apps.my-cluster.example.com/manifest.xml`
-4. The **AI Copilot** tab appears in the Excel ribbon
-5. Click "Open Copilot" to open the task pane
+   - Production: `https://excel-assistant.apps.my-cluster.example.com/manifest.xml`
+4. The **AI Assistant** tab appears in the Excel ribbon
+5. Click "Open Assistant" to open the task pane
 
 > **Note:** Sideloaded add-ins persist per-device. If you clear your Office cache or switch devices, you'll need to sideload again.
 
@@ -498,7 +517,7 @@ To make the add-in appear automatically for all users in your organization:
 1. Log in to [admin.microsoft.com](https://admin.microsoft.com)
 2. Go to **Settings > Integrated apps > Upload custom apps**
 3. Select **Provide link to manifest file**
-4. Enter your manifest URL: `https://excel-copilot.apps.my-cluster.example.com/manifest.xml`
+4. Enter your manifest URL: `https://excel-assistant.apps.my-cluster.example.com/manifest.xml`
 5. Click **Next** and assign to:
    - **Entire organization** — everyone gets it
    - **Specific users/groups** — targeted rollout
@@ -511,7 +530,7 @@ The add-in will appear in all assigned users' Excel ribbon within **24 hours** (
 If you don't have Microsoft 365 admin access:
 
 1. Sideload the add-in as described above
-2. Once loaded, **right-click the "AI Copilot" ribbon tab** > **Pin to ribbon** (Excel desktop)
+2. Once loaded, **right-click the "AI Assistant" ribbon tab** > **Pin to ribbon** (Excel desktop)
 3. For Excel on the web: the sideloaded add-in persists in your browser profile
 
 > **Tip:** On Excel desktop (Windows), sideloaded add-ins persist in `%LOCALAPPDATA%\Microsoft\Office\16.0\Wef\`. They survive Excel restarts but not Office reinstalls.
@@ -577,7 +596,7 @@ The application implements the following security measures:
 - **TLS**: Edge termination via OpenShift Route with HTTPS redirect
 - **Secrets**: LLM API key injected via OpenShift Secrets, never in images
 
-See [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md) for the full checklist.
+See [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) for the full checklist.
 
 ---
 

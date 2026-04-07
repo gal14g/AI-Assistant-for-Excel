@@ -17,7 +17,7 @@ import {
 import { buildWorkbookSnapshot } from "../workbookSnapshot";
 import { v4 as uuid } from "uuid";
 
-const LS_CONV_ID_KEY = "excel_copilot_active_conversation_id";
+const LS_CONV_ID_KEY = "excel_assistant_active_conversation_id";
 
 interface ChatState {
   messages: ChatMessage[];
@@ -55,7 +55,7 @@ export function useChat(): ChatState & ChatActions {
       id: uuid(),
       role: "system",
       content:
-        "Hi! I'm Excel AI Copilot. Ask me anything about Excel, or tell me what you'd like to do with your spreadsheet.",
+        "Hi! I'm AI Assistant For Excel. Ask me anything about Excel, or tell me what you'd like to do with your spreadsheet.",
       timestamp: new Date().toISOString(),
     },
   ]);

@@ -6,11 +6,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: excel-copilot-data
+  name: excel-assistant-data
   labels:
-    app: excel-copilot
-    app.kubernetes.io/name: excel-copilot
-    app.kubernetes.io/part-of: excel-ai-copilot
+    app: excel-assistant
+    app.kubernetes.io/name: excel-assistant
+    app.kubernetes.io/part-of: ai-assistant-for-excel
 spec:
   accessModes:
     - ReadWriteOnce

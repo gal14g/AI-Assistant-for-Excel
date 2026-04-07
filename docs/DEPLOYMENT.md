@@ -1,4 +1,4 @@
-# Deploying Excel AI Copilot to OpenShift
+# Deploying AI Assistant For Excel to OpenShift
 
 End-to-end guide to deploying the add-in to an OpenShift cluster behind a
 TLS-terminated Route. Takes ~15 minutes first time through.
@@ -24,15 +24,15 @@ hit from Excel. A mismatch here and Office rejects the add-in.
 
 Pick one of:
 
-- **A:** Let OpenShift auto-assign (e.g. `excel-copilot-myproject.apps.cluster.example.com`)
+- **A:** Let OpenShift auto-assign (e.g. `excel-assistant-myproject.apps.cluster.example.com`)
   — run the route-create step first, capture the hostname, then build.
-- **B:** Reserve a host up front (e.g. `excel-copilot.apps.cluster.example.com`)
+- **B:** Reserve a host up front (e.g. `excel-assistant.apps.cluster.example.com`)
   — set it in `openshift/route.yaml` before applying.
 
 Export it for the rest of this guide:
 
 ```bash
-export FRONTEND_URL="https://excel-copilot.apps.your-cluster.example.com"
+export FRONTEND_URL="https://excel-assistant.apps.your-cluster.example.com"
 ```
 
 ---
@@ -43,10 +43,10 @@ export FRONTEND_URL="https://excel-copilot.apps.your-cluster.example.com"
 # From the repo root
 docker build \
   --build-arg FRONTEND_URL="$FRONTEND_URL" \
-  -t your-registry.example.com/your-group/excel-copilot:v1.1.0 \
+  -t your-registry.example.com/your-group/excel-assistant:v1.1.0 \
   .
 
-docker push your-registry.example.com/your-group/excel-copilot:v1.1.0
+docker push your-registry.example.com/your-group/excel-assistant:v1.1.0
 ```
 
 The build is multi-stage:
@@ -92,14 +92,14 @@ surprises if you add a separate frontend origin later.
 Never commit the API key. Create it directly:
 
 ```bash
-oc create secret generic excel-copilot-secrets \
+oc create secret generic excel-assistant-secrets \
   --from-literal=LLM_API_KEY='sk-...your-key...'
 ```
 
 For Azure OpenAI or other providers needing extra vars, add them here:
 
 ```bash
-oc create secret generic excel-copilot-secrets \
+oc create secret generic excel-assistant-secrets \
   --from-literal=LLM_API_KEY='...' \
   --from-literal=LLM_API_VERSION='2024-02-15-preview'
 ```
@@ -133,13 +133,13 @@ oc apply -f openshift/
 
 ```bash
 # Pod should reach Running, 1/1 ready
-oc get pods -l app=excel-copilot -w
+oc get pods -l app=excel-assistant -w
 
 # Readiness endpoint — should return {"ready": true, "model": "..."}
-oc exec deploy/excel-copilot -- curl -s http://localhost:8080/ready
+oc exec deploy/excel-assistant -- curl -s http://localhost:8080/ready
 
 # Route URL — should match your FRONTEND_URL exactly
-oc get route excel-copilot -o jsonpath='{.spec.host}{"\n"}'
+oc get route excel-assistant -o jsonpath='{.spec.host}{"\n"}'
 
 # Fetch manifest.xml through the Route
 curl -sfI "$FRONTEND_URL/manifest.xml"
@@ -149,7 +149,7 @@ The first pod start takes 20-40 s because ChromaDB indexes the 51 capabilities
 into the PVC. Subsequent restarts are fast (index is persisted).
 
 If `/ready` returns 503 with `"LLM_API_KEY is not set"`, the secret wasn't
-mounted — check that the secret name matches `excel-copilot-secrets` exactly.
+mounted — check that the secret name matches `excel-assistant-secrets` exactly.
 
 ---
 
@@ -170,12 +170,12 @@ Users sideload from the manifest URL:
 ```bash
 # Rebuild and push with a new tag
 docker build --build-arg FRONTEND_URL="$FRONTEND_URL" \
-  -t your-registry.example.com/your-group/excel-copilot:v1.2.0 .
-docker push your-registry.example.com/your-group/excel-copilot:v1.2.0
+  -t your-registry.example.com/your-group/excel-assistant:v1.2.0 .
+docker push your-registry.example.com/your-group/excel-assistant:v1.2.0
 
 # Roll the deployment
-oc set image deploy/excel-copilot excel-copilot=your-registry.example.com/your-group/excel-copilot:v1.2.0
-oc rollout status deploy/excel-copilot
+oc set image deploy/excel-assistant excel-assistant=your-registry.example.com/your-group/excel-assistant:v1.2.0
+oc rollout status deploy/excel-assistant
 ```
 
 RollingUpdate strategy keeps the old pod up until the new one passes its
@@ -216,14 +216,14 @@ Useful commands:
 
 ```bash
 # Full startup logs
-oc logs deploy/excel-copilot --tail=200
+oc logs deploy/excel-assistant --tail=200
 
 # Describe pod (events, mount errors, probe failures)
-oc describe pod -l app=excel-copilot
+oc describe pod -l app=excel-assistant
 
 # Shell into the running pod
-oc exec -it deploy/excel-copilot -- /bin/bash
+oc exec -it deploy/excel-assistant -- /bin/bash
 
 # Check PVC contents (data/chroma/ and data/feedback.db should exist)
-oc exec deploy/excel-copilot -- ls -la /app/data
+oc exec deploy/excel-assistant -- ls -la /app/data
 ```

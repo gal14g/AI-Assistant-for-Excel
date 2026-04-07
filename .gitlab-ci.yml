@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Excel AI Copilot — GitLab CI/CD Pipeline
+# AI Assistant For Excel — GitLab CI/CD Pipeline
 #
 # Stages:
 #   lint       → code style and type-checking (frontend + backend)
@@ -12,7 +12,7 @@
 # Required CI/CD Variables (Settings → CI/CD → Variables):
 #   LLM_MODEL        — e.g. "claude-sonnet-4-20250514" or "gpt-4o"
 #   LLM_API_KEY      — API key (mark as masked + protected)
-#   FRONTEND_URL     — Public URL of the deployed add-in, e.g. https://copilot.mycompany.com
+#   FRONTEND_URL     — Public URL of the deployed add-in, e.g. https://excel-assistant.mycompany.com
 #   OPENSHIFT_SERVER  — cluster API URL (for deploy stage)
 #   OPENSHIFT_TOKEN   — service account token with deploy permissions
 #   OPENSHIFT_NS      — target namespace/project name
@@ -192,7 +192,7 @@ docker:build:
 # Triggered manually from the pipeline UI.
 #
 # First-time setup:
-#   1. oc create secret generic excel-copilot-secrets --from-literal=LLM_API_KEY='...'
+#   1. oc create secret generic excel-assistant-secrets --from-literal=LLM_API_KEY='...'
 #   2. Edit openshift/configmap.yaml with your CORS_ORIGINS and LLM_MODEL
 #   3. Edit openshift/route.yaml with your cluster host (optional)
 #   4. Run this job — it applies all manifests and sets the image
@@ -216,13 +216,13 @@ deploy:openshift:
     - oc apply -f openshift/service.yaml
     - oc apply -f openshift/route.yaml
     # Update the image to the newly built one
-    - oc set image deployment/excel-copilot excel-copilot="$IMAGE"
-    - oc rollout status deployment/excel-copilot --timeout=180s
+    - oc set image deployment/excel-assistant excel-assistant="$IMAGE"
+    - oc rollout status deployment/excel-assistant --timeout=180s
     # Print the route for easy access
     - echo "Deployed! Route:"
-    - oc get route excel-copilot -o jsonpath='https://{.spec.host}{"\n"}'
+    - oc get route excel-assistant -o jsonpath='https://{.spec.host}{"\n"}'
     - echo "Manifest URL (for Excel add-in installation):"
-    - oc get route excel-copilot -o jsonpath='https://{.spec.host}/manifest.xml{"\n"}'
+    - oc get route excel-assistant -o jsonpath='https://{.spec.host}/manifest.xml{"\n"}'
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $OPENSHIFT_SERVER'
       when: manual

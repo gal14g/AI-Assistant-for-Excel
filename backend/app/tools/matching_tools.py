@@ -1,5 +1,5 @@
 """
-Matching pipeline tools for Excel Copilot.
+Matching pipeline tools for Excel Assistant.
 
 All functions are synchronous, deterministic, and side-effect-free.
 They accept SheetData / ColumnProfile inputs and return ToolOutput.

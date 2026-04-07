@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: excel-copilot
+  name: excel-assistant
   labels:
-    app: excel-copilot
-    app.kubernetes.io/name: excel-copilot
-    app.kubernetes.io/part-of: excel-ai-copilot
+    app: excel-assistant
+    app.kubernetes.io/name: excel-assistant
+    app.kubernetes.io/part-of: ai-assistant-for-excel
 spec:
   selector:
-    app: excel-copilot
+    app: excel-assistant
   ports:
     - port: 8080
       targetPort: http

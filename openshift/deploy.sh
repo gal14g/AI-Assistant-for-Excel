@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
-# Excel AI Copilot — Quick Deploy to OpenShift
+# AI Assistant For Excel — Quick Deploy to OpenShift
 #
 # Usage:
 #   ./openshift/deploy.sh <LLM_API_KEY> [IMAGE] [NAMESPACE]
 #
 # Example:
 #   ./openshift/deploy.sh sk-ant-abc123
-#   ./openshift/deploy.sh sk-ant-abc123 quay.io/myorg/excel-copilot:v1.1.0
-#   ./openshift/deploy.sh sk-ant-abc123 quay.io/myorg/excel-copilot:v1.1.0 my-namespace
+#   ./openshift/deploy.sh sk-ant-abc123 quay.io/myorg/excel-assistant:v1.1.0
+#   ./openshift/deploy.sh sk-ant-abc123 quay.io/myorg/excel-assistant:v1.1.0 my-namespace
 #
 # Prerequisites:
 #   - oc CLI installed and logged in (oc login ...)
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 LLM_API_KEY="${1:?Usage: $0 <LLM_API_KEY> [IMAGE] [NAMESPACE]}"
-IMAGE="${2:-registry.gitlab.com/YOUR_GROUP/excel-copilot:latest}"
+IMAGE="${2:-registry.gitlab.com/YOUR_GROUP/excel-assistant:latest}"
 NAMESPACE="${3:-}"
 
 # Switch to namespace if provided
@@ -25,14 +25,14 @@ if [ -n "$NAMESPACE" ]; then
   oc project "$NAMESPACE"
 fi
 
-echo "==> Deploying Excel AI Copilot..."
+echo "==> Deploying AI Assistant For Excel..."
 
 # 1. Create secret (skip if exists)
-if oc get secret excel-copilot-secrets &>/dev/null; then
+if oc get secret excel-assistant-secrets &>/dev/null; then
   echo "  Secret exists — updating LLM_API_KEY..."
-  oc delete secret excel-copilot-secrets
+  oc delete secret excel-assistant-secrets
 fi
-oc create secret generic excel-copilot-secrets \
+oc create secret generic excel-assistant-secrets \
   --from-literal=LLM_API_KEY="$LLM_API_KEY"
 
 # 2. Apply all manifests
@@ -45,14 +45,14 @@ oc apply -f openshift/route.yaml
 
 # 3. Set the image
 echo "  Setting image to: $IMAGE"
-oc set image deployment/excel-copilot excel-copilot="$IMAGE"
+oc set image deployment/excel-assistant excel-assistant="$IMAGE"
 
 # 4. Wait for rollout
 echo "  Waiting for rollout..."
-oc rollout status deployment/excel-copilot --timeout=180s
+oc rollout status deployment/excel-assistant --timeout=180s
 
 # 5. Get the route URL
-ROUTE_URL=$(oc get route excel-copilot -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+ROUTE_URL=$(oc get route excel-assistant -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
 echo ""
 echo "==> Deployment complete!"
 if [ -n "$ROUTE_URL" ]; then

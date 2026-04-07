@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-  Excel AI Copilot – Office Add-in Manifest (shared runtime)
+  AI Assistant For Excel – Office Add-in Manifest (shared runtime)
 
   This manifest uses a shared runtime so the task pane, ribbon commands,
   and (future) custom functions all share the same JavaScript context.
@@ -15,9 +15,9 @@
 
   <Id>b1c2d3e4-f5b6-7890-abcd-ef1234567890</Id>
   <Version>1.0.0.2</Version>
-  <ProviderName>Excel AI Copilot</ProviderName>
+  <ProviderName>AI Assistant For Excel</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="Excel AI Copilot" />
+  <DisplayName DefaultValue="AI Assistant For Excel" />
   <Description DefaultValue="Natural-language spreadsheet assistant powered by AI" />
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-80.png" />
@@ -49,8 +49,8 @@
 
           <!-- Ribbon tab -->
           <ExtensionPoint xsi:type="PrimaryCommandSurface">
-            <CustomTab id="AICopilotTab">
-              <Group id="AICopilotGroup">
+            <CustomTab id="AIAssistantTab">
+              <Group id="AIAssistantGroup">
                 <Label resid="GroupLabel" />
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16" />
@@ -71,7 +71,7 @@
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
                   <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>AICopilotPane</TaskpaneId>
+                    <TaskpaneId>AIAssistantPane</TaskpaneId>
                     <SourceLocation resid="Taskpane.Url" />
                   </Action>
                 </Control>
@@ -97,12 +97,12 @@
         <bt:Url id="Commands.Url" DefaultValue="https://localhost:3000/commands.html" />
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="TabLabel" DefaultValue="AI Copilot" />
+        <bt:String id="TabLabel" DefaultValue="AI Assistant" />
         <bt:String id="GroupLabel" DefaultValue="AI Assistant" />
-        <bt:String id="ToggleTaskpaneLabel" DefaultValue="Open Copilot" />
+        <bt:String id="ToggleTaskpaneLabel" DefaultValue="Open Assistant" />
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="ToggleTaskpaneDesc" DefaultValue="Open the AI Copilot chat panel to issue spreadsheet commands in natural language." />
+        <bt:String id="ToggleTaskpaneDesc" DefaultValue="Open the AI Assistant chat panel to issue spreadsheet commands in natural language." />
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

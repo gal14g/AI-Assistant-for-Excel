@@ -257,7 +257,7 @@ export interface Preset {
   createdAt: string;
 }
 
-const PRESETS_KEY = "excel_copilot_presets";
+const PRESETS_KEY = "excel_assistant_presets";
 
 function readPresetsFromStorage(): Preset[] {
   try {

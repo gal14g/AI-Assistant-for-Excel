@@ -1,5 +1,5 @@
 /**
- * Entry point for the Excel AI Copilot task pane.
+ * Entry point for the AI Assistant For Excel task pane.
  *
  * Office.js notes:
  * - Office.onReady() must resolve before any Office.js API calls.

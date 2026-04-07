@@ -1,7 +1,7 @@
 {
-  "name": "excel-ai-copilot",
+  "name": "ai-assistant-for-excel",
   "version": "1.0.0",
-  "description": "Excel AI Copilot – natural-language spreadsheet assistant",
+  "description": "AI Assistant For Excel – natural-language spreadsheet assistant",
   "private": true,
   "scripts": {
     "dev": "webpack serve --mode development --open",

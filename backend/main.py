@@ -1,5 +1,5 @@
 """
-Excel AI Copilot – FastAPI Backend
+AI Assistant For Excel – FastAPI Backend
 
 Entry point for the backend server.
 
@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
-    title="Excel AI Copilot API",
-    description="Backend for the Excel AI Copilot add-in. Provides LLM-powered plan generation and validation.",
+    title="AI Assistant For Excel API",
+    description="Backend for the AI Assistant For Excel add-in. Provides LLM-powered plan generation and validation.",
     version="1.1.0",
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,

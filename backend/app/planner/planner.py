@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT = """\
-You are an analytical data-science assistant embedded in Excel AI Copilot.
+You are an analytical data-science assistant embedded in AI Assistant For Excel.
 
 Your job is to analyse the user's natural-language request and the available
 sheet data, then produce a JSON AnalyticalPlan describing:

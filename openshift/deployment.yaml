@@ -1,11 +1,11 @@
-# Excel AI Copilot — OpenShift Deployment
+# AI Assistant For Excel — OpenShift Deployment
 #
 # Quick deploy (all manifests at once):
 #   oc apply -f openshift/
 #
 # Or step by step:
 #   oc apply -f openshift/pvc.yaml
-#   oc create secret generic excel-copilot-secrets --from-literal=LLM_API_KEY='your-key'
+#   oc create secret generic excel-assistant-secrets --from-literal=LLM_API_KEY='your-key'
 #   oc apply -f openshift/configmap.yaml
 #   oc apply -f openshift/deployment.yaml
 #   oc apply -f openshift/service.yaml
@@ -14,11 +14,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: excel-copilot
+  name: excel-assistant
   labels:
-    app: excel-copilot
-    app.kubernetes.io/name: excel-copilot
-    app.kubernetes.io/part-of: excel-ai-copilot
+    app: excel-assistant
+    app.kubernetes.io/name: excel-assistant
+    app.kubernetes.io/part-of: ai-assistant-for-excel
     app.kubernetes.io/version: "1.1.0"
     app.kubernetes.io/component: backend
 spec:
@@ -30,19 +30,19 @@ spec:
       maxSurge: 1
   selector:
     matchLabels:
-      app: excel-copilot
+      app: excel-assistant
   template:
     metadata:
       labels:
-        app: excel-copilot
-        app.kubernetes.io/name: excel-copilot
+        app: excel-assistant
+        app.kubernetes.io/name: excel-assistant
     spec:
       terminationGracePeriodSeconds: 30
       containers:
-        - name: excel-copilot
+        - name: excel-assistant
           # Replace with your actual image from GitLab CI:
           #   $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-          image: registry.gitlab.com/YOUR_GROUP/excel-copilot:latest
+          image: registry.gitlab.com/YOUR_GROUP/excel-assistant:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -50,9 +50,9 @@ spec:
               name: http
           envFrom:
             - configMapRef:
-                name: excel-copilot-config
+                name: excel-assistant-config
             - secretRef:
-                name: excel-copilot-secrets
+                name: excel-assistant-secrets
           resources:
             requests:
               cpu: 250m
@@ -89,6 +89,6 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: excel-copilot-data
+            claimName: excel-assistant-data
       # OpenShift runs as arbitrary non-root UID — no securityContext override needed.
       # The Dockerfile already has chmod g+rwX.

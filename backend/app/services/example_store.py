@@ -30,7 +30,7 @@ SEED_EXAMPLES: list[tuple[str, str]] = [
     # 1. Greeting → message
     (
         "hi",
-        '{"responseType":"message","message":"Hi! I\'m Copilot, your Excel assistant. Tell me what you\'d like to do with your spreadsheet.","plans":null}',
+        '{"responseType":"message","message":"Hi! I\'m your Excel assistant. Tell me what you\'d like to do with your spreadsheet.","plans":null}',
     ),
     # 2. Question → message
     (

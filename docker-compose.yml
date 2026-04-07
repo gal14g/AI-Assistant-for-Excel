@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# Excel AI Copilot — Docker Compose
+# AI Assistant For Excel — Docker Compose
 #
 # Use this to test the production Docker container locally before deploying.
 # This is NOT used for day-to-day development (use `npm run dev` + uvicorn).

@@ -1,4 +1,4 @@
-# Adding new actions / tools to Excel AI Copilot
+# Adding new actions / tools to AI Assistant For Excel
 
 Step-by-step guide to adding a new capability. Every action touches
 **5 backend files** and **4 frontend files** — the system is fully symmetric.
@@ -323,7 +323,7 @@ After adding all files:
 - [ ] **ACTION_PARAM_MODELS complete:** every enum value has an entry
 - [ ] **CAPABILITY_DESCRIPTIONS complete:** every enum value has a description
 - [ ] **CAPABILITY_EXAMPLES added:** action is discoverable via semantic search
-- [ ] **Manual test:** ask the copilot to perform the new action in Excel
+- [ ] **Manual test:** ask the assistant to perform the new action in Excel
 
 ## Quick sync check (run from project root):
 

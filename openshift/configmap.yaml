@@ -3,11 +3,11 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: excel-copilot-config
+  name: excel-assistant-config
   labels:
-    app: excel-copilot
-    app.kubernetes.io/name: excel-copilot
-    app.kubernetes.io/part-of: excel-ai-copilot
+    app: excel-assistant
+    app.kubernetes.io/name: excel-assistant
+    app.kubernetes.io/part-of: ai-assistant-for-excel
 data:
   OPENSHIFT: "true"
   SERVE_STATIC: "true"
@@ -42,4 +42,4 @@ data:
 
   # CORS — set to your actual deployed add-in URL.
   # In OpenShift the frontend is same-origin, but Office.js iframes may need this.
-  CORS_ORIGINS: '["https://excel-copilot.apps.your-cluster.example.com"]'
+  CORS_ORIGINS: '["https://excel-assistant.apps.your-cluster.example.com"]'
