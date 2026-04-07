@@ -1,5 +1,14 @@
 # Excel AI Copilot
 
+> **Disclaimer**
+> This project is **not affiliated with, endorsed by, or sponsored by Microsoft Corporation** in any way.
+> It is a fully independent, open-source project.
+> "Excel" and "Microsoft 365" are trademarks of Microsoft Corporation.
+> "Copilot" as used here refers to this project's own AI assistant functionality and has no connection to Microsoft Copilot or GitHub Copilot.
+> This add-in uses Microsoft's public [Office Add-in APIs](https://learn.microsoft.com/en-us/office/dev/add-ins/) — the same APIs available to any third-party developer.
+
+---
+
 A Microsoft Excel Office Add-in that lets you control your spreadsheet with natural language. Powered by any OpenAI-compatible LLM provider (OpenAI, Google Gemini, Anthropic Claude, Cohere, Azure, Ollama, and more).
 
 Works on **macOS, Windows, and Linux**. Runs fully offline when paired with a local model (Ollama) — the embedding model is bundled in the repo, no runtime downloads required.
