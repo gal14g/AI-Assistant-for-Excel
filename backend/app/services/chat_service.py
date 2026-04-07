@@ -125,7 +125,6 @@ MULTI-STEP PLANS:
     - Add new sheet → write headers → create table → create pivot (4 steps)
     - Match records → sort result → add conditional formatting (3 steps)
     - Clean up column → remove duplicates → auto-fit columns (3 steps)
-    - DASHBOARD: addSheet("Dashboard") → createPivot → createChart → addConditionalFormat → autoFitColumns
 - COMPLEX ANALYSIS workflows (combine cleaning + matching + reporting):
     - fillBlanks (forward-fill merged-cell exports) → cleanupText → matchRecords → addConditionalFormat on mismatches
     - splitColumn (full name → first/last) → removeDuplicates → createPivot summary
@@ -133,6 +132,34 @@ MULTI-STEP PLANS:
     - compareSheets (highlight diffs) → addConditionalFormat → createChart of diff counts
     - unpivot (wide → tall) → createPivot (tall → grouped) for flexible re-shaping
     - subtotals by category → addSparkline per group → freezePanes on header
+
+DASHBOARD BUILDING (when user asks for a dashboard, summary sheet, or tracking sheet):
+A dashboard is a multi-step plan that creates a dedicated sheet with KPI formulas, charts, and formatting. Follow this pattern:
+
+Step 1: addSheet — create a new sheet (e.g. "Dashboard", or user's requested name)
+Step 2: writeFormula — KPI cells with COUNTIF/COUNTIFS/SUMIF/SUMIFS formulas that compute from the SOURCE data sheet
+  - Example: "people without value V in column X" → =COUNTIFS(SourceSheet!X:X,"<>"&"V") or =ROWS(SourceSheet!X:X)-COUNTIF(SourceSheet!X:X,"V")-1
+  - Example: "total revenue" → =SUMIF(Data!B:B,"Active",Data!E:E)
+  - Example: "% completion" → =COUNTIF(Data!F:F,"Done")/COUNTA(Data!F:F)
+  - ALWAYS reference the SOURCE sheet in formulas (e.g. "Data!A:A"), never assume the data is on the dashboard sheet
+Step 3: writeValues — labels next to each KPI cell (e.g. [["Metric", "Value"], ["People without V", ""], ["Total Active", ""]])
+  - Write labels FIRST, then overlay the formula cells from Step 2, OR write labels in column A and formulas in column B
+Step 4: createChart — visualize the data, sourced from the original data sheet or from the KPI cells
+  - Use chartType appropriate to the data: pie for proportions, bar for comparisons, line for time trends
+Step 5: addConditionalFormat — color-code KPIs (e.g. red if count > threshold, green if target met)
+Step 6: setNumberFormat — format KPI cells (percentages as "0%", currencies as "$#,##0.00", counts as "#,##0")
+Step 7: autoFitColumns — clean up the layout
+Step 8 (optional): freezePanes — freeze the header row
+Step 9 (optional): addSparkline — inline trend charts next to KPIs if time-series data exists
+
+KEY DASHBOARD RULES:
+- ALL formulas MUST reference the source data sheet, not the dashboard sheet — the dashboard READS from data, never copies it
+- Use COUNTIFS (not COUNTIF) when the user specifies multiple conditions
+- When the user says "track X without value V", that means COUNTIFS(range,"<>"&"V") or ROWS-COUNTIF
+- When the user says "track X with value V", that means COUNTIF(range,"V")
+- Use dependsOn to ensure addSheet runs FIRST, then formulas/values, then charts/formatting
+- If the user asks for multiple metrics, create one KPI formula per metric — don't try to combine them
+- Produce 2-3 options when possible: e.g. Option A (simple KPI summary), Option B (KPI + chart), Option C (full dashboard with charts + sparklines + conditional formatting)
 
 USING THE WORKBOOK SNAPSHOT (critical for grounded plans):
 - When the user message includes a "Workbook data snapshot", treat those headers, dtypes, and sample values as GROUND TRUTH. Do NOT invent column names that aren't there.
