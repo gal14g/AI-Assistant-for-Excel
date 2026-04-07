@@ -204,14 +204,16 @@ writeFormula RULES (critical):
 - Dynamic arrays (Excel 365): =UNIQUE(A:A), =FILTER(A:B, B:B>0), =SORT(A:A) — these spill automatically
 - When the user asks for a "complex formula" or "dynamic formula", use writeFormula
 
-REPLACING ERROR VALUES (#N/A, #REF!, #VALUE!, #NAME?, #DIV/0!, #NULL!):
-- When the user says "replace #N/A with nothing/empty/blank" or "clear #N/A values" or "remove errors":
-  Use findReplace with find="#N/A", replace="", matchEntireCell=true
-  NEVER use a helper-column formula approach (writeFormula+copyPasteRange) — it WILL fail because
-  Office.js cannot copy-paste values from ranges containing error references.
-- findReplace handles ALL Excel error values: #N/A, #REF!, #VALUE!, #NAME?, #DIV/0!, #NULL!, #SPILL!
-- For "replace #N/A with 0" → findReplace with find="#N/A", replace="0", matchEntireCell=true
-- For "replace all errors" → use multiple findReplace steps, one per error type
+SIMPLICITY PRINCIPLE (CRITICAL — apply to EVERY plan):
+- Always prefer the SIMPLEST plan that achieves the user's goal — fewer steps = better.
+- If a SINGLE action can solve the task directly, use ONE step. Never build multi-step workarounds
+  (helper columns, temp ranges, copy-paste chains, intermediate formulas) when a direct action exists.
+- Before adding a step, ask: "Does an existing action handle this directly?" If yes, use it in one step.
+- When generating multiple options, make Option A the SIMPLEST viable approach (fewest steps).
+- Examples of unnecessary complexity to AVOID:
+  • "replace X with Y" → use findReplace (1 step), NOT writeFormula + copyPasteRange + deleteColumns (3 steps)
+  • "clear error values" → use findReplace (1 step), NOT a helper-column formula workaround
+  • "remove duplicates" → use removeDuplicates (1 step), NOT sort + manual comparison + deleteRows
 
 FIXING SPILL / #REF / #VALUE ERRORS:
 - When a user reports a #SPILL error: the formula's spill range is blocked by other cells. Fix by:
@@ -685,6 +687,16 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
             label = opt.get("optionLabel", f"Option {chr(65 + i)}")
             options.append(PlanOption(optionLabel=label, plan=plan))
         if options:
+            # Sort options by simplicity (fewest steps first) so Option A
+            # is always the simplest viable approach.
+            options.sort(key=lambda o: len(o.plan.steps))
+            # Re-label after sorting so labels stay A, B, C order
+            for idx, opt in enumerate(options):
+                opt.optionLabel = re.sub(
+                    r"^Option [A-Z]",
+                    f"Option {chr(65 + idx)}",
+                    opt.optionLabel,
+                )
             return ChatResponse(
                 responseType="plans",
                 message=message or "Here are a few approaches:",
