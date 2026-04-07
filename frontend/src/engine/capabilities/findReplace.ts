@@ -80,6 +80,13 @@ async function handler(
 
   const isFormula = replace.startsWith("=");
 
+  // Excel error strings as they appear in .values (with trailing "!")
+  // and in .text (without trailing "!"). We need to match against both.
+  const ERROR_DISPLAY = ["#N/A", "#REF!", "#VALUE!", "#NAME?", "#DIV/0!", "#NULL!", "#SPILL!", "#CALC!"];
+  const isSearchingForError = ERROR_DISPLAY.some(
+    (e) => e.toLowerCase() === findStr || e.toLowerCase().replace(/[!?]$/, "") === findStr,
+  );
+
   for (let ri = 0; ri < texts.length; ri++) {
     const textRow = texts[ri] ?? [];
     const valRow = values[ri] ?? [];
@@ -95,6 +102,17 @@ async function handler(
         matched = displayStr === findStr;
       } else {
         matched = displayStr.includes(findStr);
+      }
+
+      // Error-value matching: cells with #N/A show "#N/A" in .text and
+      // "#N/A!" in .values. Also match raw error strings from .values.
+      if (!matched && isSearchingForError) {
+        const rawStr = typeof valRow[ci] === "string" ? valRow[ci] as string : "";
+        const rawLower = matchCase ? rawStr : rawStr.toLowerCase();
+        // Match raw value (e.g. "#N/A!" matches search for "#N/A")
+        if (rawLower === findStr || rawLower.replace(/[!?]$/, "") === findStr) {
+          matched = true;
+        }
       }
 
       // Date-aware matching: if both find and display parse as dates, compare
@@ -114,10 +132,19 @@ async function handler(
       const rawVal = valRow[ci];
       const cell = range.getCell(ri, ci);
 
-      // Decide what value to write based on the cell's underlying type:
-      // - If the raw value is a number (date serial), write a new serial to preserve formatting.
-      // - If the raw value is a string, do a normal string replacement.
-      if (typeof rawVal === "number" && replaceSerial != null) {
+      // For error cells, always clear the cell first to remove the error,
+      // then write the replacement value.
+      const rawStr = typeof rawVal === "string" ? rawVal : "";
+      const isErrorCell = rawStr.startsWith("#") || displayText.startsWith("#");
+
+      if (isErrorCell) {
+        // Clear the error cell first (formulas/values) then write replacement
+        cell.clear("Contents" as Excel.ClearApplyTo);
+        if (replace !== "") {
+          cell.values = [[replace]];
+        }
+      } else if (typeof rawVal === "number" && replaceSerial != null) {
+        // Date serial → date serial replacement
         cell.values = [[replaceSerial]];
       } else if (isFormula) {
         cell.formulas = [[replace]];

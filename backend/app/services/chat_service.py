@@ -204,6 +204,15 @@ writeFormula RULES (critical):
 - Dynamic arrays (Excel 365): =UNIQUE(A:A), =FILTER(A:B, B:B>0), =SORT(A:A) — these spill automatically
 - When the user asks for a "complex formula" or "dynamic formula", use writeFormula
 
+REPLACING ERROR VALUES (#N/A, #REF!, #VALUE!, #NAME?, #DIV/0!, #NULL!):
+- When the user says "replace #N/A with nothing/empty/blank" or "clear #N/A values" or "remove errors":
+  Use findReplace with find="#N/A", replace="", matchEntireCell=true
+  NEVER use a helper-column formula approach (writeFormula+copyPasteRange) — it WILL fail because
+  Office.js cannot copy-paste values from ranges containing error references.
+- findReplace handles ALL Excel error values: #N/A, #REF!, #VALUE!, #NAME?, #DIV/0!, #NULL!, #SPILL!
+- For "replace #N/A with 0" → findReplace with find="#N/A", replace="0", matchEntireCell=true
+- For "replace all errors" → use multiple findReplace steps, one per error type
+
 FIXING SPILL / #REF / #VALUE ERRORS:
 - When a user reports a #SPILL error: the formula's spill range is blocked by other cells. Fix by:
   1. Clear the blocking cells first (use clearRange on the spill target area)
