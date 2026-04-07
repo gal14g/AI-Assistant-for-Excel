@@ -29,11 +29,17 @@ def get_chroma_client():
         return _client
 
     from chromadb import PersistentClient
+    from chromadb.config import Settings as ChromaSettings
 
     persist_dir = Path(settings.chroma_persist_dir or str(_default_chroma_dir()))
     persist_dir.mkdir(parents=True, exist_ok=True)
 
-    _client = PersistentClient(path=str(persist_dir))
+    # Disable anonymous telemetry (posthog.com) — required for air-gapped deployments
+    # and cleaner logs everywhere else. Env var ANONYMIZED_TELEMETRY=False also works.
+    _client = PersistentClient(
+        path=str(persist_dir),
+        settings=ChromaSettings(anonymized_telemetry=False),
+    )
     return _client
 
 

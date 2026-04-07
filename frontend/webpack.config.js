@@ -10,6 +10,14 @@ const devServerPort = 3000;
 // so the correct URL gets baked into manifest.xml at build time.
 const FRONTEND_URL = process.env.FRONTEND_URL || `https://localhost:${devServerPort}`;
 
+// Office.js source URL. Defaults to Microsoft's CDN.
+// For enclosed/air-gapped networks, set OFFICE_JS_SRC=/assets/office.js and
+// drop a downloaded copy of office.js into frontend/public/assets/office.js
+// before building. See AIRGAP.md.
+const OFFICE_JS_SRC =
+  process.env.OFFICE_JS_SRC ||
+  "https://appsforoffice.microsoft.com/lib/1/hosted/office.js";
+
 module.exports = (env, argv) => {
   const isDev = argv.mode === "development";
 
@@ -51,11 +59,13 @@ module.exports = (env, argv) => {
         template: "./public/taskpane.html",
         filename: "taskpane.html",
         chunks: ["taskpane"],
+        officeJsSrc: OFFICE_JS_SRC,
       }),
       new HtmlWebpackPlugin({
         template: "./public/commands.html",
         filename: "commands.html",
         chunks: ["commands"],
+        officeJsSrc: OFFICE_JS_SRC,
       }),
       new CopyWebpackPlugin({
         patterns: [

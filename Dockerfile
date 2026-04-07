@@ -31,6 +31,11 @@ COPY frontend/ ./
 ARG FRONTEND_URL=https://localhost:3000
 ENV FRONTEND_URL=$FRONTEND_URL
 
+# For enclosed networks: pass --build-arg OFFICE_JS_SRC=/assets/office.js
+# AND drop a downloaded office.js into frontend/public/assets/ beforehand.
+ARG OFFICE_JS_SRC=
+ENV OFFICE_JS_SRC=$OFFICE_JS_SRC
+
 RUN npm run build
 
 # ── Stage 2: Install Python dependencies ─────────────────────────────────────
@@ -81,7 +86,10 @@ ENV OPENSHIFT=true \
     LLM_API_KEY="" \
     LLM_BASE_URL="" \
     LLM_MAX_TOKENS=4096 \
-    LLM_TEMPERATURE=0.1
+    LLM_TEMPERATURE=0.1 \
+    ANONYMIZED_TELEMETRY=False \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
 
 VOLUME ["/app/data"]
 
@@ -91,4 +99,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
 # Use sh -c so $PORT expansion works
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 2"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1"]

@@ -247,6 +247,77 @@ CAPABILITY_EXAMPLES: dict[str, list[str]] = {
         "create a slicer to filter by Region",
         "add a slicer for the sales table by category",
     ],
+    "splitColumn": [
+        "split the full name column into first and last name",
+        "break this column apart by commas",
+        "split email column on the @ sign",
+        "separate city and state into two columns",
+    ],
+    "unpivot": [
+        "unpivot the monthly columns into a tall table",
+        "melt wide format into long format",
+        "reshape from wide to tall",
+        "turn these year columns into rows",
+    ],
+    "crossTabulate": [
+        "cross-tabulate region by product",
+        "build a contingency table of category and status",
+        "count occurrences of A vs B",
+        "make a cross-tab matrix",
+    ],
+    "bulkFormula": [
+        "apply this formula to the whole column",
+        "fill this formula down for every row",
+        "add this formula to all rows in the data",
+    ],
+    "compareSheets": [
+        "compare Sheet1 and Sheet2 and show differences",
+        "find cells that differ between these two ranges",
+        "diff the old and new versions",
+        "highlight what changed between the sheets",
+    ],
+    "consolidateRanges": [
+        "combine these three ranges into one table",
+        "stack data from multiple sheets together",
+        "merge these ranges vertically",
+        "consolidate data from Q1, Q2, Q3, Q4 sheets",
+    ],
+    "extractPattern": [
+        "extract email addresses from this column",
+        "pull phone numbers out of the messy text",
+        "get the URLs from column B",
+        "extract dates from the description column",
+    ],
+    "categorize": [
+        "categorize rows as corporate or personal",
+        "tag each row based on these rules",
+        "classify customers into buckets",
+        "label each amount as small/medium/large",
+    ],
+    "fillBlanks": [
+        "fill empty cells with the value above",
+        "forward-fill the merged category column",
+        "fill blanks with zero",
+        "carry values down to fill empty rows",
+    ],
+    "subtotals": [
+        "add subtotals by department",
+        "insert subtotal rows for each category",
+        "group with subtotals by region",
+        "create Excel subtotals grouped by product",
+    ],
+    "transpose": [
+        "transpose this range",
+        "flip rows and columns",
+        "swap rows with columns",
+        "paste special transpose",
+    ],
+    "namedRange": [
+        "name this range SalesData",
+        "create a named range",
+        "give this range a name",
+        "define a name for these cells",
+    ],
 }
 
 

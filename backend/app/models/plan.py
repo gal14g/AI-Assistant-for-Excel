@@ -48,6 +48,23 @@ class StepAction(str, Enum):
     groupRows = "groupRows"
     setRowColSize = "setRowColSize"
     copyPasteRange = "copyPasteRange"
+    pageLayout = "pageLayout"
+    insertPicture = "insertPicture"
+    insertShape = "insertShape"
+    insertTextBox = "insertTextBox"
+    addSlicer = "addSlicer"
+    splitColumn = "splitColumn"
+    unpivot = "unpivot"
+    crossTabulate = "crossTabulate"
+    bulkFormula = "bulkFormula"
+    compareSheets = "compareSheets"
+    consolidateRanges = "consolidateRanges"
+    extractPattern = "extractPattern"
+    categorize = "categorize"
+    fillBlanks = "fillBlanks"
+    subtotals = "subtotals"
+    transpose = "transpose"
+    namedRange = "namedRange"
 
 
 # --- Step parameter models ---
@@ -298,6 +315,168 @@ class CopyPasteRangeParams(BaseModel):
     pasteType: Optional[str] = "all"
 
 
+class PageLayoutMargins(BaseModel):
+    top: Optional[float] = None
+    bottom: Optional[float] = None
+    left: Optional[float] = None
+    right: Optional[float] = None
+    header: Optional[float] = None
+    footer: Optional[float] = None
+
+
+class PageLayoutParams(BaseModel):
+    sheetName: Optional[str] = None
+    margins: Optional[PageLayoutMargins] = None
+    orientation: Optional[str] = None  # "portrait" | "landscape"
+    paperSize: Optional[str] = None
+    printArea: Optional[str] = None
+    showGridlines: Optional[bool] = None
+    printGridlines: Optional[bool] = None
+
+
+class InsertPictureParams(BaseModel):
+    sheetName: Optional[str] = None
+    imageBase64: str
+    left: Optional[float] = None
+    top: Optional[float] = None
+    width: Optional[float] = None
+    height: Optional[float] = None
+    altText: Optional[str] = None
+
+
+class InsertShapeParams(BaseModel):
+    sheetName: Optional[str] = None
+    shapeType: str
+    left: float
+    top: float
+    width: float
+    height: float
+    fillColor: Optional[str] = None
+    lineColor: Optional[str] = None
+    lineWeight: Optional[float] = None
+    textContent: Optional[str] = None
+
+
+class InsertTextBoxParams(BaseModel):
+    sheetName: Optional[str] = None
+    text: str
+    left: float
+    top: float
+    width: float
+    height: float
+    fontSize: Optional[float] = None
+    fontFamily: Optional[str] = None
+    fontColor: Optional[str] = None
+    fillColor: Optional[str] = None
+    horizontalAlignment: Optional[str] = None
+
+
+class AddSlicerParams(BaseModel):
+    sheetName: Optional[str] = None
+    sourceType: str  # "pivotTable" | "table"
+    sourceName: str
+    sourceField: str
+    left: Optional[float] = None
+    top: Optional[float] = None
+    width: Optional[float] = None
+    height: Optional[float] = None
+
+
+class SplitColumnParams(BaseModel):
+    sourceRange: str
+    delimiter: str
+    outputStartColumn: str
+    outputHeaders: Optional[list[str]] = None
+    parts: Optional[int] = None
+
+
+class UnpivotParams(BaseModel):
+    sourceRange: str
+    idColumns: int
+    outputRange: str
+    variableColumnName: Optional[str] = None
+    valueColumnName: Optional[str] = None
+
+
+class CrossTabulateParams(BaseModel):
+    sourceRange: str
+    rowField: int
+    columnField: int
+    valueField: int
+    aggregation: str  # "count" | "sum" | "average"
+    outputRange: str
+
+
+class BulkFormulaParams(BaseModel):
+    formula: str
+    outputRange: str
+    dataRange: str
+    hasHeaders: Optional[bool] = True
+
+
+class CompareSheetsParams(BaseModel):
+    rangeA: str
+    rangeB: str
+    outputRange: Optional[str] = None
+    highlightDiffs: Optional[bool] = False
+    highlightColor: Optional[str] = None
+
+
+class ConsolidateRangesParams(BaseModel):
+    sourceRanges: list[str]
+    outputRange: str
+    direction: Optional[str] = "vertical"  # "vertical" | "horizontal"
+    addSourceLabel: Optional[bool] = False
+    deduplicate: Optional[bool] = False
+
+
+class ExtractPatternParams(BaseModel):
+    sourceRange: str
+    pattern: str  # built-in name or custom regex
+    outputRange: str
+    allMatches: Optional[bool] = False
+
+
+class CategorizeRule(BaseModel):
+    operator: str  # "contains" | "equals" | "startsWith" | "endsWith" | "greaterThan" | "lessThan" | "regex"
+    value: Union[str, int, float]
+    label: str
+
+
+class CategorizeParams(BaseModel):
+    sourceRange: str
+    outputRange: str
+    rules: list[CategorizeRule]
+    defaultValue: Optional[str] = None
+
+
+class FillBlanksParams(BaseModel):
+    range: str
+    fillMode: Optional[str] = "down"  # "down" | "up" | "constant"
+    constantValue: Optional[Union[str, int, float]] = None
+
+
+class SubtotalsParams(BaseModel):
+    dataRange: str
+    groupByColumn: int
+    subtotalColumns: list[int]
+    aggregation: Optional[str] = "sum"  # "sum" | "count" | "average"
+    subtotalLabel: Optional[str] = None
+
+
+class TransposeParams(BaseModel):
+    sourceRange: str
+    outputRange: str
+    copyFormatting: Optional[bool] = False
+
+
+class NamedRangeParams(BaseModel):
+    operation: str  # "create" | "update" | "delete"
+    name: str
+    range: Optional[str] = None
+    sheetName: Optional[str] = None
+
+
 # --- Plan step ---
 
 
@@ -360,4 +539,21 @@ ACTION_PARAM_MODELS: dict[StepAction, type[BaseModel]] = {
     StepAction.groupRows:            GroupRowsParams,
     StepAction.setRowColSize:        SetRowColSizeParams,
     StepAction.copyPasteRange:       CopyPasteRangeParams,
+    StepAction.pageLayout:           PageLayoutParams,
+    StepAction.insertPicture:        InsertPictureParams,
+    StepAction.insertShape:          InsertShapeParams,
+    StepAction.insertTextBox:        InsertTextBoxParams,
+    StepAction.addSlicer:            AddSlicerParams,
+    StepAction.splitColumn:          SplitColumnParams,
+    StepAction.unpivot:              UnpivotParams,
+    StepAction.crossTabulate:        CrossTabulateParams,
+    StepAction.bulkFormula:          BulkFormulaParams,
+    StepAction.compareSheets:        CompareSheetsParams,
+    StepAction.consolidateRanges:    ConsolidateRangesParams,
+    StepAction.extractPattern:       ExtractPatternParams,
+    StepAction.categorize:           CategorizeParams,
+    StepAction.fillBlanks:           FillBlanksParams,
+    StepAction.subtotals:            SubtotalsParams,
+    StepAction.transpose:            TransposeParams,
+    StepAction.namedRange:           NamedRangeParams,
 }

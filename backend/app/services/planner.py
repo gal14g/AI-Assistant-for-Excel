@@ -1,40 +1,17 @@
 """
-LLM Planner Service
+Capability catalog + LLM response-parsing utilities.
 
-Sends the user's request to any LLM supported via the OpenAI SDK and receives a
-structured JSON execution plan.  The LLM is instructed to output ONLY a typed
-JSON plan — never executable code.
+CAPABILITY_DESCRIPTIONS is the source-of-truth docstring used when building
+the chat system prompt (services/chat_service.py) and when indexing
+capabilities for vector retrieval (services/capability_store.py).
 
-Provider selection is driven entirely by config.py / .env:
-  - Set LLM_MODEL to any supported model string (e.g. gpt-4o, gemini/gemini-2.0-flash)
-  - Set LLM_API_KEY if the provider requires one
-  - Set LLM_BASE_URL for local / self-hosted endpoints (Ollama, custom proxy…)
-
-The llm_client module handles provider auto-detection and base_url routing.
+extract_json() handles stripping markdown fences, trailing commas, and
+malformed output from LLM responses before parsing.
 """
 
 from __future__ import annotations
 
 import json
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-
-from ..models.plan import ExecutionPlan
-from ..models.request import PlanRequest
-from .llm_client import acompletion
-
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
-
-
-def _load_prompt(filename: str) -> str:
-    path = PROMPTS_DIR / filename
-    if path.exists():
-        return path.read_text()
-    return ""
-
-
-SYSTEM_PROMPT = _load_prompt("planner_system.txt")
 
 CAPABILITY_DESCRIPTIONS = {
     "readRange": "Read values from a cell range. Params: range (string), includeHeaders (bool, optional)",
@@ -76,129 +53,19 @@ CAPABILITY_DESCRIPTIONS = {
     "insertShape": "Insert a geometric shape (rectangle, oval, arrow, star, etc.) with fill, outline, and optional text",
     "insertTextBox": "Insert a text box with styled content at a given position",
     "addSlicer": "Add a slicer control for filtering a PivotTable or Table by a specific field",
+    "splitColumn": "Split a text column into multiple columns by a delimiter (e.g. 'John Smith' → 'John' | 'Smith'). Params: sourceRange (single-column range), delimiter (string — use empty string for fixed-width), outputStartColumn (column letter where first output goes, e.g. 'B'), outputHeaders (list of strings, optional), parts (int, optional — how many pieces to split into).",
+    "unpivot": "Reshape wide data into tall format (melt). The left idColumns stay; remaining columns collapse into variable + value columns. Params: sourceRange (range including headers), idColumns (int — number of left columns to keep as IDs), outputRange, variableColumnName (optional, default 'Attribute'), valueColumnName (optional, default 'Value').",
+    "crossTabulate": "Build a contingency matrix / cross-tab from raw data. Params: sourceRange (raw data including headers), rowField (1-based column index for matrix rows), columnField (1-based column index for matrix columns), valueField (1-based column index for the aggregated value), aggregation ('count'|'sum'|'average'), outputRange.",
+    "bulkFormula": "Fill a formula template across a whole output column, sized to the dataRange. Use this when the user says 'add this formula to the whole column'. Params: formula (template for first data row, e.g. '=A2*B2'), outputRange (target column range), dataRange (range that defines how many rows to fill), hasHeaders (bool, default true — skips row 1).",
+    "compareSheets": "Compare two ranges cell-by-cell and optionally highlight differences or write a diff report. Params: rangeA, rangeB, outputRange (optional — where to write the diff report; new sheet created if omitted), highlightDiffs (bool, default false — color diff cells in rangeA), highlightColor (hex, optional).",
+    "consolidateRanges": "Combine multiple ranges into one — vertical stack (append rows) or horizontal join (side-by-side). Params: sourceRanges (list of range strings), outputRange, direction ('vertical'|'horizontal', default 'vertical'), addSourceLabel (bool — prepends source range as a column), deduplicate (bool, default false).",
+    "extractPattern": "Extract a pattern from each cell using a regex or a named built-in. Params: sourceRange (source column), pattern ('email'|'phone'|'url'|'date'|'number'|'currency' or a custom regex string), outputRange, allMatches (bool, default false — if true, join all matches per cell).",
+    "categorize": "Classify each row in a column into labels by applying rules (first match wins). Params: sourceRange (source column), outputRange, rules (list of {operator: 'contains'|'equals'|'startsWith'|'endsWith'|'greaterThan'|'lessThan'|'regex', value, label}), defaultValue (optional string for no-rule-matches).",
+    "fillBlanks": "Forward-fill or back-fill blank cells — ideal for cleaning merged-cell exports. Params: range, fillMode ('down'=carry value from above (default) | 'up'=carry value from below | 'constant'), constantValue (required when fillMode='constant').",
+    "subtotals": "Insert subtotal rows after each group in sorted data (Excel's Data→Subtotals). Params: dataRange (including headers), groupByColumn (1-based int), subtotalColumns (list of 1-based ints to aggregate), aggregation ('sum'|'count'|'average', default 'sum'), subtotalLabel (optional, default 'Total'). Sorts by groupByColumn first.",
+    "transpose": "Swap rows and columns of a range (Excel's Paste Special → Transpose). Params: sourceRange, outputRange — outputRange dimensions must be the inverse of sourceRange, copyFormatting (bool, default false — values only).",
+    "namedRange": "Create, update, or delete a named range. Params: operation ('create'|'update'|'delete'), name (string), range (required for create/update), sheetName (optional — if provided, range is sheet-scoped; omit for workbook-scoped).",
 }
-
-
-def build_system_prompt(relevant_actions: list[str] | None = None) -> str:
-    """Return the planner system prompt (file-based or inline fallback)."""
-    if relevant_actions:
-        filtered = {k: v for k, v in CAPABILITY_DESCRIPTIONS.items() if k in relevant_actions}
-    else:
-        filtered = CAPABILITY_DESCRIPTIONS
-
-    if SYSTEM_PROMPT:
-        caps = "\n".join(f"- `{k}`: {v}" for k, v in filtered.items())
-        return SYSTEM_PROMPT.replace("{CAPABILITIES}", caps)
-
-    caps = "\n".join(f"  - {k}: {v}" for k, v in filtered.items())
-    return f"""You are an Excel AI Copilot planner. Your job is to convert natural-language spreadsheet commands into a structured JSON execution plan.
-
-CRITICAL RULES:
-1. NEVER output executable code. Only output a JSON execution plan.
-2. ALWAYS preserve existing formatting unless the user explicitly asks to change it. Set preserveFormatting: true by default.
-3. PREFER native Excel formulas (writeFormula with preferFormula: true) over computed values (writeValues) whenever possible. Formulas auto-update and are auditable.
-4. Each step MUST have a clear, user-friendly description.
-5. Use the exact action names and parameter schemas defined below.
-6. The plan must be valid JSON conforming to the ExecutionPlan schema.
-
-AVAILABLE ACTIONS:
-{caps}
-
-OUTPUT SCHEMA:
-{{
-  "planId": "unique-id",
-  "createdAt": "ISO timestamp",
-  "userRequest": "original user message",
-  "summary": "human-readable summary of what the plan does",
-  "steps": [
-    {{
-      "id": "step_1",
-      "description": "What this step does",
-      "action": "actionName",
-      "params": {{ ... action-specific params ... }},
-      "dependsOn": ["step_id"]
-    }}
-  ],
-  "preserveFormatting": true,
-  "confidence": 0.0-1.0,
-  "warnings": ["optional warnings"]
-}}
-
-When the user references ranges like [[Sheet1!A1:C20]], use those exact references in your plan.
-When a formula can solve the problem, prefer writeFormula with the appropriate Excel formula.
-For lookups, prefer XLOOKUP (Excel 365+) or VLOOKUP.
-For grouped aggregations, prefer SUMIF/SUMIFS.
-Always respond with ONLY the JSON plan, no other text."""
-
-
-def build_user_message(request: PlanRequest) -> str:
-    """Build the user message that goes to the LLM."""
-    parts = [request.userMessage]
-
-    if request.rangeTokens:
-        refs = ", ".join(f"{t.sheetName}!{t.address}" for t in request.rangeTokens)
-        parts.append(f"\nReferenced ranges: {refs}")
-
-    if request.activeSheet:
-        parts.append(f"\nActive sheet: {request.activeSheet}")
-
-    if request.workbookName:
-        parts.append(f"\nWorkbook: {request.workbookName}")
-
-    if request.workbookPath:
-        parts.append(f"\nWorkbook path: {request.workbookPath}")
-
-    return "\n".join(parts)
-
-
-def _build_messages(request: PlanRequest, relevant_actions: list[str] | None = None) -> list[dict]:
-    """
-    Assemble the message list.
-
-    Uses the standard OpenAI message format (system/user/assistant roles).
-    All OpenAI-compatible providers accept this format.
-    """
-    messages: list[dict] = [{"role": "system", "content": build_system_prompt(relevant_actions)}]
-
-    if request.conversationHistory:
-        for msg in request.conversationHistory[-6:]:
-            messages.append({"role": msg.role, "content": msg.content})
-
-    messages.append({"role": "user", "content": build_user_message(request)})
-    return messages
-
-
-async def generate_plan(request: PlanRequest) -> tuple[ExecutionPlan, str]:
-    """
-    Generate an execution plan from the user's request (non-streaming).
-
-    Returns (plan, explanation) tuple.
-    """
-    from .capability_store import search_capabilities
-
-    relevant_actions = search_capabilities(request.userMessage)
-
-    response_text = await acompletion(
-        messages=_build_messages(request, relevant_actions),
-    )
-    plan_json = extract_json(response_text)
-    _fill_defaults(plan_json, request)
-
-    plan = ExecutionPlan(**plan_json)
-    return plan, plan.summary
-
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _fill_defaults(plan_json: dict, request: PlanRequest) -> None:
-    """Ensure required top-level fields are present."""
-    if "planId" not in plan_json:
-        plan_json["planId"] = str(uuid.uuid4())
-    if "createdAt" not in plan_json:
-        plan_json["createdAt"] = datetime.now(timezone.utc).isoformat()
-    if "userRequest" not in plan_json:
-        plan_json["userRequest"] = request.userMessage
 
 
 def _clean_json_text(text: str) -> str:

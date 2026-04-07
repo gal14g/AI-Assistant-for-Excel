@@ -377,6 +377,79 @@ function validateActionParams(
       requireField(step.id, p, "range", errors);
       requireField(step.id, p, "format", errors);
       break;
+    case "splitColumn":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "delimiter", errors);
+      requireField(step.id, p, "outputStartColumn", errors);
+      break;
+    case "unpivot":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "idColumns", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "crossTabulate":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "rowField", errors);
+      requireField(step.id, p, "columnField", errors);
+      requireField(step.id, p, "valueField", errors);
+      requireField(step.id, p, "aggregation", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "bulkFormula":
+      requireField(step.id, p, "formula", errors);
+      requireField(step.id, p, "outputRange", errors);
+      requireField(step.id, p, "dataRange", errors);
+      break;
+    case "compareSheets":
+      requireField(step.id, p, "rangeA", errors);
+      requireField(step.id, p, "rangeB", errors);
+      break;
+    case "consolidateRanges":
+      requireField(step.id, p, "sourceRanges", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "extractPattern":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "pattern", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "categorize":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "outputRange", errors);
+      requireField(step.id, p, "rules", errors);
+      break;
+    case "fillBlanks":
+      requireField(step.id, p, "range", errors);
+      if (p.fillMode === "constant" && p.constantValue === undefined) {
+        errors.push({
+          stepId: step.id,
+          field: "constantValue",
+          message: 'fillMode="constant" requires a "constantValue" field',
+          code: "MISSING_FIELD",
+        });
+      }
+      break;
+    case "subtotals":
+      requireField(step.id, p, "dataRange", errors);
+      requireField(step.id, p, "groupByColumn", errors);
+      requireField(step.id, p, "subtotalColumns", errors);
+      break;
+    case "transpose":
+      requireField(step.id, p, "sourceRange", errors);
+      requireField(step.id, p, "outputRange", errors);
+      break;
+    case "namedRange":
+      requireField(step.id, p, "operation", errors);
+      requireField(step.id, p, "name", errors);
+      if ((p.operation === "create" || p.operation === "update") && !p.range) {
+        errors.push({
+          stepId: step.id,
+          field: "range",
+          message: 'namedRange operation="create"|"update" requires a "range" field',
+          code: "MISSING_FIELD",
+        });
+      }
+      break;
     default:
       // Extensible: unknown actions are caught by the registry check above
       break;

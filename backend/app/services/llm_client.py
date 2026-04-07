@@ -34,13 +34,16 @@ _PROVIDER_BASE_URLS: dict[str, str] = {
     "ollama": "http://localhost:11434/v1",
 }
 
+# Domains that need /v1 appended for OpenAI-compatible API
+_OLLAMA_HOSTS = {"11434", "ollama.com", "ollama.ai"}
+
 
 def _resolve_base_url() -> str | None:
     """Determine the base URL for the OpenAI client."""
     if settings.llm_base_url:
         url = settings.llm_base_url.rstrip("/")
-        # Ollama: ensure /v1 suffix for OpenAI compatibility
-        if "11434" in url and not url.endswith("/v1"):
+        # Ollama (local or cloud): ensure /v1 suffix for OpenAI compatibility
+        if any(host in url for host in _OLLAMA_HOSTS) and not url.endswith("/v1"):
             return url + "/v1"
         return url
 
@@ -72,10 +75,12 @@ def _resolve_api_key() -> str:
     """Return the API key, or a dummy for providers that don't need one."""
     if settings.llm_api_key:
         return settings.llm_api_key
-    # Ollama doesn't require an API key but the SDK needs a non-empty string
-    if settings.llm_model.lower().startswith("ollama/") or (
-        settings.llm_base_url and "11434" in settings.llm_base_url
-    ):
+    # Local Ollama doesn't require an API key but the SDK needs a non-empty string
+    is_local_ollama = (
+        settings.llm_model.lower().startswith("ollama/")
+        and not settings.llm_base_url
+    ) or (settings.llm_base_url and "11434" in settings.llm_base_url)
+    if is_local_ollama:
         return "ollama"
     return settings.llm_api_key or "no-key-set"
 

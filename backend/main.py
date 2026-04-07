@@ -24,7 +24,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
-from app.routers import plan, chat, feedback, conversations
+from app.routers import chat, feedback, conversations
 from app.routers import analyze
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,6 @@ app.add_middleware(
 
 # ── API routers ───────────────────────────────────────────────────────────────
 app.include_router(chat.router)
-app.include_router(plan.router)
 app.include_router(analyze.router)
 app.include_router(feedback.router)
 app.include_router(conversations.router)
@@ -112,6 +111,12 @@ async def readiness():
     errors = []
     if not settings.llm_model:
         errors.append("LLM_MODEL is not set")
+    # LLM_API_KEY is required for every provider except Ollama (local).
+    is_ollama = settings.llm_model.lower().startswith("ollama/") or (
+        settings.llm_base_url and "11434" in settings.llm_base_url
+    )
+    if not is_ollama and not settings.llm_api_key:
+        errors.append("LLM_API_KEY is not set")
     from app.services.capability_store import is_ready as store_ready
     if not store_ready():
         errors.append("Capability store not initialized")

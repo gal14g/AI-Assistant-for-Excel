@@ -28,15 +28,18 @@ Works on **macOS, Windows, and Linux**. Runs fully offline when paired with a lo
 ## What it does
 
 - Chat with an AI assistant directly inside Excel's task pane
-- The AI understands your spreadsheet context (selected ranges, sheet names, workbook name)
-- Returns **2-3 alternative plan options** for each request so you can pick the best approach
-- Executes multi-step operations: match records, create charts/pivots, sort, clean text, apply conditional formatting, find & replace, format cells, and 30+ more actions
+- The AI is **grounded in your actual data** — every turn attaches a lightweight workbook snapshot (headers, dtypes, sample rows, anchor cell) so the planner never guesses column names
+- Returns **1-3 alternative plan options** for each request so you can pick the best approach
+- **51 capabilities**: match records, create charts/pivots, sort/filter, clean text, conditional formatting, find & replace, format cells, split columns, unpivot, cross-tabulate, extract patterns (regex), categorize, subtotals, transpose, named ranges, slicers, shapes, page layout, and more
 - XLOOKUP with automatic fallback to VLOOKUP for older Excel versions (2016/2019)
-- Full undo support after every AI operation
-- **Self-improving**: every plan you approve is stored and used as a few-shot example for future queries via vector similarity search (ChromaDB + sentence-transformers)
-- All interactions are logged to a local feedback database for analysis and fine-tuning
+- Streaming responses via SSE — you see the plan forming live
+- Full undo support (client-side snapshot stack)
+- Persistent conversation history with per-message execution timelines
+- **Self-improving**: every plan you approve is promoted into the few-shot example store (ChromaDB + sentence-transformers)
 - Hebrew and English support with full RTL
-- Modern chat UI with Fluent UI icons, per-message execution timelines, and integrated command input
+- Runs fully offline with Ollama + the bundled embedding model
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a complete architectural overview.
 
 ---
 
@@ -48,25 +51,29 @@ User's Excel
     | Office.js (HTTPS)
     v
 Frontend (React + TypeScript)
-    |  taskpane UI, execution engine, 34+ capability handlers
-    |  POST /api/chat
+    |  taskpane UI, workbook snapshot, 51 capability handlers
+    |  POST /api/chat/stream   (SSE — primary)
     v
 Backend (FastAPI + OpenAI SDK)
     |
     |-- Vector search (ChromaDB + all-MiniLM-L6-v2)
-    |   |-- Capability store: finds the ~10 most relevant actions for each query
-    |   |-- Example store: retrieves the ~5 most relevant few-shot examples
+    |   |-- Capability store: top-K relevant actions per query
+    |   |-- Example store:    top-K relevant few-shot examples
     |
-    |-- LLM call (any OpenAI-compatible provider)
-    |   Returns 2-3 alternative plan options as structured JSON
+    |-- Single LLM call (any OpenAI-compatible provider)
+    |   Streams back a message or 1-3 plan options
+    |   Retries with failure feedback if the first attempt doesn't parse
     |
-    |-- Feedback DB (SQLite)
-    |   Logs every interaction + user's choice (applied / dismissed)
+    |-- Two-layer validation (Pydantic schema + business rules)
+    |
+    |-- SQLite: conversations + per-turn feedback
     |   Applied plans are promoted into the example store automatically
     |
     v
-Response: plan options -> user picks one -> frontend executes via Office.js
+ChatResponse -> user picks a plan option -> executor runs it via Office.js
 ```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed breakdown.
 
 When deployed to OpenShift, a single container serves both the API and the frontend:
 
@@ -111,15 +118,17 @@ excel-ai-copilot/
 |   |-- secret.yaml           Secret template (LLM_API_KEY)
 |
 |-- backend/                  Python FastAPI backend
-|   |-- main.py               App entry point, startup hooks, CORS, rate limiting
+|   |-- main.py               App entry point, CORS, rate limiting, static serving
 |   |-- requirements.txt      Python dependencies
 |   |-- app/
 |   |   |-- config.py         Settings loaded from .env (Pydantic BaseSettings)
-|   |   |-- db.py             SQLite feedback database (aiosqlite)
-|   |   |-- routers/          API endpoint definitions
-|   |   |-- services/         Business logic (chat, planner, vector search)
+|   |   |-- db.py             SQLite (aiosqlite) — feedback + conversations
+|   |   |-- routers/          chat.py, analyze.py, feedback.py, conversations.py
+|   |   |-- services/         chat_service, planner (catalog+parsing), validator, llm_client, *_store
+|   |   |-- planner/          AnalyticalPlanner (second pipeline, /api/analyze)
+|   |   |-- orchestrator/     Tool-chain runner for AnalyticalPlan
+|   |   |-- tools/            pandas / rapidfuzz / sentence-transformers tools
 |   |   |-- models/           Pydantic request/response schemas
-|   |   |-- prompts/          LLM system prompt templates
 |   |-- data/                 Runtime data (git-ignored, auto-created)
 |   |-- tests/
 |
@@ -128,10 +137,11 @@ excel-ai-copilot/
     |-- webpack.config.js     Build config + HTTPS + API proxy
     |-- package.json
     |-- src/
-        |-- engine/           Execution engine (34+ capability handlers)
-        |-- services/         API client
-        |-- taskpane/         UI components + hooks
-        |-- commands/         Office ribbon command handlers
+        |-- engine/           Execution engine (51 capability handlers, validator, executor)
+        |-- services/         API client (chat stream, feedback, conversations)
+        |-- taskpane/         UI components + hooks + workbook snapshot
+        |-- shared/           snapshot.ts (undo stack)
+        |-- commands/         Office ribbon stub
 ```
 
 ---
@@ -186,9 +196,9 @@ uvicorn main:app --reload --port 8000
 
 On first startup, the backend will:
 1. Load the `all-MiniLM-L6-v2` embedding model from `backend/models/` (bundled in the repo, ~87MB — no network call required)
-2. Index all 34 capabilities into ChromaDB (~2 seconds)
+2. Index all 51 capabilities into ChromaDB (~2 seconds)
 3. Seed curated few-shot examples into the example store
-4. Create the SQLite feedback database
+4. Create the SQLite database (feedback + conversations)
 
 **Terminal 2 -- Frontend:**
 ```bash
@@ -576,7 +586,7 @@ The project uses **SQLite** + **ChromaDB** (file-based) by default. This works f
 
 1. Replace `aiosqlite` with `asyncpg` + `sqlalchemy[asyncio]` in `requirements.txt`
 2. Update `backend/app/db.py` to use SQLAlchemy async engine
-3. Replace ChromaDB with pgvector in `backend/app/services/chroma_client.py`
+3. Replace ChromaDB with pgvector in `backend/app/services/capability_store.py` and `example_store.py`
 4. Set `DATABASE_URL=postgresql+asyncpg://user:pass@host/db` in environment
 
 The table schemas remain identical. The `sentence-transformers` model stays the same — only the storage backend changes.
@@ -586,9 +596,8 @@ The table schemas remain identical. The `sentence-transformers` model stays the 
 | File | Change |
 |---|---|
 | `backend/app/db.py` | SQLite -> asyncpg/SQLAlchemy |
-| `backend/app/services/chroma_client.py` | ChromaDB -> pgvector |
-| `backend/app/services/capability_store.py` | Collection calls -> SQL |
-| `backend/app/services/example_store.py` | Collection calls -> SQL |
+| `backend/app/services/capability_store.py` | ChromaDB collection -> pgvector SQL |
+| `backend/app/services/example_store.py` | ChromaDB collection -> pgvector SQL |
 | `backend/app/config.py` | Add `database_url` setting |
 
 ---

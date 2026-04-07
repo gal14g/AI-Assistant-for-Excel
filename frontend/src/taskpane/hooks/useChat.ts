@@ -14,6 +14,7 @@ import {
   popLastExchange as apiPopLastExchange,
   deleteConversation as apiDeleteConversation,
 } from "../../services/api";
+import { buildWorkbookSnapshot } from "../workbookSnapshot";
 import { v4 as uuid } from "uuid";
 
 const LS_CONV_ID_KEY = "excel_copilot_active_conversation_id";
@@ -126,6 +127,11 @@ export function useChat(): ChatState & ChatActions {
           // Fallback when running outside Excel context
         }
 
+        // Build a lightweight snapshot of the workbook so the planner can
+        // reason about the real data (actual headers, dtypes, sample rows).
+        // Never blocks on failure.
+        const workbookSnapshot = (await buildWorkbookSnapshot()) ?? undefined;
+
         const request: ChatRequest = {
           userMessage: text,
           rangeTokens,
@@ -136,6 +142,7 @@ export function useChat(): ChatState & ChatActions {
           conversationHistory: history,
           conversationId: conversationIdRef.current ?? undefined,
           userMessageId,
+          workbookSnapshot,
         };
 
         setStreamingText("");

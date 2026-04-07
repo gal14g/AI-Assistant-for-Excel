@@ -126,6 +126,40 @@ MULTI-STEP PLANS:
     - Match records → sort result → add conditional formatting (3 steps)
     - Clean up column → remove duplicates → auto-fit columns (3 steps)
     - DASHBOARD: addSheet("Dashboard") → createPivot → createChart → addConditionalFormat → autoFitColumns
+- COMPLEX ANALYSIS workflows (combine cleaning + matching + reporting):
+    - fillBlanks (forward-fill merged-cell exports) → cleanupText → matchRecords → addConditionalFormat on mismatches
+    - splitColumn (full name → first/last) → removeDuplicates → createPivot summary
+    - extractPattern (emails from messy text) → categorize (tag as corporate/personal) → createPivot count by category
+    - compareSheets (highlight diffs) → addConditionalFormat → createChart of diff counts
+    - unpivot (wide → tall) → createPivot (tall → grouped) for flexible re-shaping
+    - subtotals by category → addSparkline per group → freezePanes on header
+
+USING THE WORKBOOK SNAPSHOT (critical for grounded plans):
+- When the user message includes a "Workbook data snapshot", treat those headers, dtypes, and sample values as GROUND TRUTH. Do NOT invent column names that aren't there.
+- When the user says "the date column" or "the sales column", pick the matching header from the snapshot by name and dtype (e.g. prefer a [date] dtype column over a [text] one for "date").
+- Use rowCount from the snapshot to size fillDown, writeValues ranges, and subtotal insertions correctly — never guess.
+- Dtype hints guide formula choice:
+    • [number] columns → SUM/AVERAGE/COUNTIFS/conditional formatting by value
+    • [date] columns → date arithmetic (EOMONTH, YEAR, DATEDIF), date filters, month grouping
+    • [text] columns → TRIM/PROPER/TEXTBEFORE/SPLIT, extractPattern, categorize
+    • [mixed] columns → flag as dirty: propose cleanupText/fillBlanks/extractPattern BEFORE the main computation
+- When data looks dirty in the snapshot (blank header cells, inconsistent dtypes, numbers stored as text), propose a CLEAN-THEN-ACT plan: fillBlanks/cleanupText/findReplace first, then the user's requested operation.
+- OFFSET TABLES: the snapshot reports "data starts at <cell>" and "used range" — these are the TRUTH. If the data starts at C5, the first data row is row 6, not row 2, and the first column is C, not A. Build ALL ranges, formulas, writeFormula cell targets, and fillDown counts relative to that anchor. Never assume A1. Use the used-range address verbatim when you need to reference the whole table.
+- For cross-sheet operations, use the snapshot to identify candidate join keys (same header name across sheets, or same dtype profile). Always name the exact sheets and columns in your plan.
+- CRITICAL: The snapshot shows ONLY the first 5 data rows as a SAMPLE. It does NOT contain the full dataset. You CANNOT see the actual data. NEVER answer ANY question about data values, counts, sums, averages, minimums, maximums, percentages, duplicates, matches, mismatches, trends, or patterns by looking at sample rows — your answer WILL be wrong. This includes ALL of these question types:
+  • "how many X?" / "count X" → writeFormula with COUNTIF/COUNTIFS
+  • "what is the total/sum?" → writeFormula with SUM/SUMIF/SUMIFS
+  • "what is the average/mean?" → writeFormula with AVERAGE/AVERAGEIF
+  • "what is the max/min/largest/smallest?" → writeFormula with MAX/MIN/MAXIFS/MINIFS
+  • "find/list all X" → filter, addConditionalFormat, or writeFormula
+  • "are there duplicates?" → writeFormula with COUNTIF>1, or addConditionalFormat
+  • "which X has the most/least?" → createPivot or writeFormula with INDEX/MATCH
+  • "compare X to Y" / "mismatches" → compareSheets, matchRecords, or writeFormula
+  • "what percentage?" → writeFormula with COUNTIF divided by COUNTA
+  • "is there any X?" / "does X exist?" → writeFormula with COUNTIF or MATCH
+  • "show me the trend" → createChart or addSparkline
+  • ANY question that requires reading more than the 5 visible sample rows → ALWAYS produce a plan
+  You MAY answer directly from the snapshot ONLY for structural questions: "what columns exist?", "what sheet has dates?", "what dtype is column C?", "how many rows total?" (rowCount is accurate).
 
 writeFormula RULES (critical):
 - Params: cell (string — SINGLE cell like "A1" or "Sheet1!D2"), formula (string starting with =), fillDown (int, optional)
@@ -306,6 +340,48 @@ def _build_user_content(request: ChatRequest) -> str:
         parts.append(f"\nActive sheet: {request.activeSheet}")
     if request.workbookName:
         parts.append(f"\nWorkbook: {request.workbookName}")
+
+    # Inject the workbook snapshot: actual headers, dtypes, row counts and a
+    # few sample rows per sheet. This is the single biggest grounding signal
+    # the planner has — without it the LLM has to guess at column names.
+    if request.workbookSnapshot and request.workbookSnapshot.sheets:
+        snap_lines: list[str] = [
+            "\nWorkbook data snapshot (real headers + sample rows):",
+            "  ⚠ WARNING: Only the first few rows are shown as a SAMPLE. You CANNOT see the full data. NEVER answer data questions (count, sum, average, max, min, find, compare, duplicates, etc.) from these rows — ALWAYS produce a formula/plan instead.",
+        ]
+        for s in request.workbookSnapshot.sheets:
+            if not s.headers and s.rowCount == 0:
+                snap_lines.append(f"  • {s.sheetName}: (empty)")
+                continue
+            header_pairs = ", ".join(
+                f"{h} [{s.dtypes[i] if i < len(s.dtypes) else '?'}]"
+                for i, h in enumerate(s.headers)
+            )
+            # Parse anchor cell "C5" → (letters="C", header_row=5). Tables
+            # don't always start at A1, so we must report the real anchor
+            # and emit sheet-absolute row numbers.
+            anchor = s.anchorCell or "A1"
+            m = re.match(r"^([A-Za-z]+)(\d+)$", anchor)
+            anchor_col_letters = m.group(1).upper() if m else "A"
+            header_row = int(m.group(2)) if m else 1
+
+            used_addr = s.usedRangeAddress or f"{s.sheetName}!{anchor}"
+            snap_lines.append(
+                f"  • {s.sheetName} — {s.rowCount} rows × {s.columnCount} cols, "
+                f"data starts at {anchor_col_letters}{header_row} "
+                f"(headers on row {header_row}, used range: {used_addr})"
+            )
+            snap_lines.append(f"    cols: {header_pairs}")
+            if s.sampleRows:
+                for offset, row in enumerate(s.sampleRows[:3], start=1):
+                    cells = " | ".join(
+                        ("" if v is None else str(v))[:30] for v in row
+                    )
+                    snap_lines.append(f"    row {header_row + offset}: {cells}")
+        if request.workbookSnapshot.truncated:
+            snap_lines.append("  (additional sheets truncated)")
+        parts.append("\n".join(snap_lines))
+
     return "\n".join(parts)
 
 
@@ -326,14 +402,41 @@ async def _build_chat_messages(request: ChatRequest, relevant_actions: list[str]
     return messages
 
 
-def _build_retry_messages(request: ChatRequest, relevant_actions: list[str] | None = None) -> list[dict]:
-    """Stripped-down prompt for retry — no few-shot examples, harder JSON enforcement."""
-    actions_key = tuple(relevant_actions) if relevant_actions else None
-    system = (
-        _build_chat_system_prompt(actions_key)
-        + "\n\nCRITICAL: Your ENTIRE response must be ONE valid JSON object and nothing else. "
-        "No prose, no markdown, no explanation — just the JSON object starting with { and ending with }."
-    )
+def _build_retry_messages(
+    request: ChatRequest,
+    relevant_actions: list[str] | None = None,
+    failure_reason: str | None = None,
+) -> list[dict]:
+    """Compact retry prompt — much shorter than the full system prompt.
+
+    Smaller models lose the schema in a 250-line prompt. On retry we send
+    only the minimal schema + the specific error, no capability catalog or
+    multi-option rules.
+    """
+    # Build a minimal action list (just names, no descriptions)
+    actions = relevant_actions or list(CAPABILITY_DESCRIPTIONS.keys())
+    actions_str = ", ".join(actions)
+
+    system = f"""You are Excel AI Copilot. Respond with ONE JSON object only.
+
+FORMAT A — for questions/greetings:
+{{"responseType":"message","message":"<your reply>","plans":null}}
+
+FORMAT B — for spreadsheet operations:
+{{"responseType":"plans","message":"<overview>","plans":[{{"optionLabel":"Option A","plan":{{"planId":"1","createdAt":"","userRequest":"","summary":"<what it does>","steps":[{{"id":"step_1","description":"<what>","action":"<actionName>","params":{{}}}}],"confidence":0.9}}}}]}}
+
+Available actions: {actions_str}
+
+RULES:
+- "action" must be one of the listed actions
+- "params" must contain the action's parameters
+- Reply in the SAME language as the user
+- Extract ranges from [[...]] tokens — use the address inside, not the brackets
+- NO prose, NO markdown — ONLY the JSON object"""
+
+    if failure_reason:
+        system += f"\n\nYour previous attempt failed: {failure_reason}\nFix it."
+
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": _build_user_content(request)},
@@ -341,26 +444,170 @@ def _build_retry_messages(request: ChatRequest, relevant_actions: list[str] | No
 
 
 def _fill_plan_defaults(plan_data: dict, request: ChatRequest) -> ExecutionPlan:
-    """Ensure required top-level plan fields exist, then parse."""
+    """Ensure required top-level plan fields exist, then parse.
+
+    Handles bare-step shortcuts: smaller models sometimes emit a single step dict
+    (e.g. {"action": "matchRecords", ...}) instead of a full ExecutionPlan. We
+    auto-wrap those into a valid single-step plan.
+    """
+    # Auto-wrap a bare step into a plan
+    if "action" in plan_data and "steps" not in plan_data:
+        step = dict(plan_data)  # copy
+        # Separate the fields that belong on the plan vs on the step
+        action = step.pop("action")
+        step_id = step.pop("id", "step1")
+        description = step.pop("description", f"{action} step")
+        depends_on = step.pop("dependsOn", None)
+        # Everything else is step params
+        step_obj = {
+            "id": step_id,
+            "description": description,
+            "action": action,
+            "params": step,
+        }
+        if depends_on is not None:
+            step_obj["dependsOn"] = depends_on
+        plan_data = {
+            "summary": description,
+            "steps": [step_obj],
+            "confidence": 0.7,
+        }
+
     if "planId" not in plan_data:
         plan_data["planId"] = str(uuid.uuid4())
     if "createdAt" not in plan_data:
         plan_data["createdAt"] = datetime.now(timezone.utc).isoformat()
     if "userRequest" not in plan_data:
         plan_data["userRequest"] = request.userMessage
+    if "summary" not in plan_data:
+        plan_data["summary"] = request.userMessage[:100]
+    if "confidence" not in plan_data:
+        plan_data["confidence"] = 0.7
     return ExecutionPlan(**plan_data)
+
+
+def _infer_action_from_keys(d: dict) -> str | None:
+    """Guess the intended action from param-like keys in an off-schema dict."""
+    key_hints = {
+        "lookupRange": "matchRecords",
+        "sourceRange": "matchRecords",
+        "match_columns": "matchRecords",
+        "dataRange": "createChart",
+        "chartType": "createChart",
+        "formula": "writeFormula",
+        "tableName": "createTable",
+        "sheetName": "addSheet",
+        "find": "findReplace",
+        "groupByColumn": "groupSum",
+        "sortFields": "sortRange",
+        "ruleType": "addConditionalFormat",
+        "delimiter": "splitColumn",
+    }
+    for key, action in key_hints.items():
+        if key in d:
+            return action
+    return None
+
+
+def _normalize_param_keys(params: dict) -> dict:
+    """Convert snake_case keys to camelCase for common off-schema outputs."""
+    snake_to_camel = {
+        "lookup_range": "lookupRange",
+        "source_range": "sourceRange",
+        "output_range": "outputRange",
+        "return_columns": "returnColumns",
+        "match_type": "matchType",
+        "write_value": "writeValue",
+        "lookup_column": "lookupRange",
+        "source_columns": "returnColumns",
+        "target_columns": "outputRange",
+        "data_range": "dataRange",
+        "chart_type": "chartType",
+        "group_by_column": "groupByColumn",
+        "sum_column": "sumColumn",
+        "sort_fields": "sortFields",
+        "fill_down": "fillDown",
+        "prefer_formula": "preferFormula",
+    }
+    result = {}
+    for k, v in params.items():
+        result[snake_to_camel.get(k, k)] = v
+    return result
 
 
 def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
     parsed = extract_json(text)
-    response_type = parsed.get("responseType", "message")
-    message = parsed.get("message", "")
+    response_type = parsed.get("responseType", "")
+    # Accept common aliases that weaker models emit instead of "message"
+    message = (
+        parsed.get("message")
+        or parsed.get("response")
+        or parsed.get("content")
+        or parsed.get("text")
+        or parsed.get("reply")
+        or ""
+    )
+
+    # ── Handle completely off-schema output from smaller models ──────────
+    # Model returned a flat dict with no responseType — try to salvage it
+    if not response_type:
+        # Case 1: has "action" key → bare step
+        if "action" in parsed:
+            parsed = _normalize_param_keys(parsed)
+            plan = _fill_plan_defaults(parsed, request)
+            return ChatResponse(
+                responseType="plans",
+                message=message or plan.summary,
+                plans=[PlanOption(optionLabel="Option A", plan=plan)],
+            )
+        # Case 2: has param-like keys but no action → infer action
+        inferred = _infer_action_from_keys(parsed)
+        if inferred:
+            normalized = _normalize_param_keys(parsed)
+            # Remove non-param keys
+            for k in ("message", "response", "content", "text", "reply",
+                       "match_columns", "source_sheet", "target_sheet"):
+                normalized.pop(k, None)
+            normalized["action"] = inferred
+            plan = _fill_plan_defaults(normalized, request)
+            return ChatResponse(
+                responseType="plans",
+                message=message or plan.summary,
+                plans=[PlanOption(optionLabel="Option A", plan=plan)],
+            )
+        # Case 3: has tool_calls → extract first function call
+        if "tool_calls" in parsed:
+            calls = parsed["tool_calls"]
+            if isinstance(calls, list) and calls:
+                call = calls[0]
+                func = call.get("function", "")
+                args = call.get("args", call.get("arguments", {}))
+                if isinstance(func, str) and isinstance(args, dict):
+                    # Convert snake_case function name to camelCase
+                    action = re.sub(r"_([a-z])", lambda m: m.group(1).upper(), func)
+                    args = _normalize_param_keys(args)
+                    args["action"] = action
+                    plan = _fill_plan_defaults(args, request)
+                    return ChatResponse(
+                        responseType="plans",
+                        message=message or plan.summary,
+                        plans=[PlanOption(optionLabel="Option A", plan=plan)],
+                    )
+        # Case 4: has a message-like field but no responseType → treat as message
+        if message.strip():
+            return ChatResponse(responseType="message", message=message, plan=None)
+
+    # ── Standard schema paths ───────────────────────────────────────────
+    if not response_type:
+        response_type = "message"
 
     # New multi-option format: responseType "plans" with array
     if response_type == "plans" and parsed.get("plans"):
         options: list[PlanOption] = []
         for i, opt in enumerate(parsed["plans"]):
             plan_data = opt.get("plan", opt)  # handle both {optionLabel, plan} and bare plan
+            if isinstance(plan_data, dict):
+                plan_data = _normalize_param_keys(plan_data)
             plan = _fill_plan_defaults(plan_data, request)
             label = opt.get("optionLabel", f"Option {chr(65 + i)}")
             options.append(PlanOption(optionLabel=label, plan=plan))
@@ -426,6 +673,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     start = time.monotonic()
 
     result: ChatResponse | None = None
+    failure_reason: str | None = None
 
     try:
         text = await acompletion(
@@ -435,12 +683,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
         result = _parse_response(text, request)
     except Exception as exc:
         logger.warning("Chat attempt 1 failed: %s", exc)
+        failure_reason = str(exc)[:500]
 
     # Retry with no few-shot examples and a stronger JSON-only instruction
     if result is None:
         try:
             text = await acompletion(
-                messages=_build_retry_messages(request, relevant_actions),
+                messages=_build_retry_messages(request, relevant_actions, failure_reason),
             )
             logger.debug("LLM raw response (attempt 2): %s", text[:500])
             result = _parse_response(text, request)
@@ -524,18 +773,23 @@ async def chat_stream(request: ChatRequest) -> AsyncIterator[str]:
 
     full_text = ""
     result: ChatResponse | None = None
+    failure_reason: str | None = None
 
-    async def _stream_attempt(messages: list[dict]) -> bool:
-        nonlocal full_text, result
+    async def _stream_attempt(messages: list[dict]) -> AsyncIterator[str]:
+        nonlocal full_text, result, failure_reason
         full_text = ""
         try:
             async for chunk in acompletion_stream(messages):
                 full_text += chunk
                 yield f"data: {_json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
             result = _parse_response(full_text, request)
-            return
         except Exception as exc:
-            logger.warning("Stream attempt failed: %s", exc)
+            logger.warning(
+                "Stream attempt failed: %s | raw LLM output (first 500 chars): %r",
+                exc,
+                full_text[:500],
+            )
+            failure_reason = str(exc)[:500]
 
     # Attempt 1: full prompt with few-shot examples
     async for sse in _stream_attempt(await _build_chat_messages(request, relevant_actions)):
@@ -546,7 +800,7 @@ async def chat_stream(request: ChatRequest) -> AsyncIterator[str]:
         # Tell the frontend to clear the bad partial text before retrying
         yield f"data: {_json.dumps({'type': 'reset'})}\n\n"
         full_text = ""
-        async for sse in _stream_attempt(_build_retry_messages(request, relevant_actions)):
+        async for sse in _stream_attempt(_build_retry_messages(request, relevant_actions, failure_reason)):
             yield sse
 
     if result is None:
