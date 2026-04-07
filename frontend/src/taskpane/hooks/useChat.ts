@@ -10,6 +10,7 @@ import { ChatMessage, ExecutionPlan, ExecutionState, PlanOption } from "../../en
 import {
   sendChatMessageStream,
   ChatRequest,
+  ExecutionContextDTO,
   getConversation,
   popLastExchange as apiPopLastExchange,
   deleteConversation as apiDeleteConversation,
@@ -32,6 +33,11 @@ interface ChatState {
 
 interface ChatActions {
   sendMessage: (text: string, rangeTokens?: { address: string; sheetName: string }[]) => Promise<void>;
+  /**
+   * Refine a failed plan: sends execution context back to the LLM so it can
+   * produce a corrected plan that picks up from the failure point.
+   */
+  refinePlan: (failedPlan: ExecutionPlan, executionState: ExecutionState) => Promise<void>;
   stopMessage: () => void;
   clearHistory: () => void;
   /** Remove the last user + assistant message pair (used by undo). Returns the user message text. */
@@ -198,6 +204,141 @@ export function useChat(): ChatState & ChatActions {
     [messages]
   );
 
+  /**
+   * Refine a failed plan by sending the execution state back to the LLM.
+   * The LLM sees which steps succeeded/failed and produces a corrected plan.
+   */
+  const refinePlan = useCallback(
+    async (failedPlan: ExecutionPlan, executionState: ExecutionState) => {
+      // Find the failed step
+      const failedResult = executionState.stepResults.find((r) => r.status === "error");
+      const failedStep = failedPlan.steps.find((s) => s.id === failedResult?.stepId);
+
+      // Build execution context DTO
+      const executionContext: ExecutionContextDTO = {
+        originalPlanId: failedPlan.planId,
+        originalUserRequest: failedPlan.userRequest,
+        stepResults: executionState.stepResults.map((r) => ({
+          stepId: r.stepId,
+          status: r.status as "success" | "error" | "skipped" | "preview",
+          message: r.message,
+          error: r.error,
+        })),
+        failedStepId: failedResult?.stepId,
+        failedStepAction: failedStep?.action,
+        failedStepError: failedResult?.error ?? failedResult?.message,
+      };
+
+      const refinementMsg = `Fix the failed step in my plan: ${failedResult?.error ?? "unknown error"}`;
+      const userMsg: ChatMessage = {
+        id: uuid(),
+        role: "user",
+        content: refinementMsg,
+        timestamp: new Date().toISOString(),
+      };
+
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
+
+      setMessages((prev) => [...prev, userMsg]);
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const history = messages
+          .filter((m) => m.role !== "system")
+          .slice(-10)
+          .map((m) => ({ role: m.role, content: m.content }));
+
+        let activeSheet = "";
+        let workbookName = "";
+        let usedRangeEnd = "";
+        try {
+          await Excel.run(async (context) => {
+            const sheet = context.workbook.worksheets.getActiveWorksheet();
+            sheet.load("name");
+            context.workbook.load("name");
+            const usedRange = sheet.getUsedRangeOrNullObject(true);
+            usedRange.load("address");
+            await context.sync();
+            activeSheet = sheet.name;
+            workbookName = context.workbook.name ?? "";
+            if (!usedRange.isNullObject && usedRange.address) {
+              const addr = usedRange.address.split("!").pop() ?? "";
+              const endCell = addr.includes(":") ? addr.split(":")[1] : addr;
+              usedRangeEnd = endCell;
+            }
+          });
+        } catch {
+          // Fallback
+        }
+
+        const workbookSnapshot = (await buildWorkbookSnapshot()) ?? undefined;
+
+        const request: ChatRequest = {
+          userMessage: refinementMsg,
+          activeSheet,
+          workbookName: workbookName || undefined,
+          usedRangeEnd: usedRangeEnd || undefined,
+          locale: navigator.language || undefined,
+          conversationHistory: history,
+          conversationId: conversationIdRef.current ?? undefined,
+          userMessageId: userMsg.id,
+          workbookSnapshot,
+          executionContext,
+        };
+
+        setStreamingText("");
+        const response = await sendChatMessageStream(
+          request,
+          abortRef.current?.signal,
+          (chunk) => setStreamingText((prev) => prev + chunk),
+          () => setStreamingText(""),
+        );
+        setStreamingText("");
+
+        if (response.conversationId && response.conversationId !== conversationIdRef.current) {
+          setConversationId(response.conversationId);
+        }
+
+        const assistantMsg: ChatMessage = {
+          id: response.assistantMessageId ?? uuid(),
+          role: "assistant",
+          content: response.message,
+          plan: response.plans?.[0]?.plan ?? response.plan,
+          timestamp: new Date().toISOString(),
+        };
+
+        setMessages((prev) => [...prev, assistantMsg]);
+        setInteractionId(response.interactionId ?? null);
+
+        if (response.responseType === "plans" && response.plans?.length) {
+          setCurrentOptions(response.plans);
+          setCurrentPlan(null);
+        } else if (response.responseType === "plan" && response.plan) {
+          setCurrentOptions(null);
+          setCurrentPlan(response.plan);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        const errorMsg = err instanceof Error ? err.message : "Failed to refine plan";
+        setError(errorMsg);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: uuid(),
+            role: "assistant",
+            content: `Sorry, I couldn't refine the plan: ${errorMsg}`,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [messages],
+  );
+
   const stopMessage = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -338,6 +479,7 @@ export function useChat(): ChatState & ChatActions {
     error,
     conversationId,
     sendMessage,
+    refinePlan,
     stopMessage,
     clearHistory,
     removeLastExchange,

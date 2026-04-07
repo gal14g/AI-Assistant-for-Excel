@@ -37,7 +37,7 @@ export interface WorkbookSnapshot {
 
 const MAX_SHEETS = 15;
 const MAX_COLUMNS = 30;
-const MAX_SAMPLE_ROWS = 5;
+const MAX_SAMPLE_ROWS = 20;
 
 type Cell = string | number | boolean | null;
 

@@ -116,6 +116,15 @@ PLAN RULES:
 5. Set preserveFormatting: true unless the user explicitly asks to change formatting
 6. Each step must have a unique id like step_1, step_2, etc.
 
+STEP OUTPUT BINDING (passing data between steps):
+- Steps can reference outputs from earlier steps using {{{{step_N.field}}}} syntax
+- When a step produces an output (e.g. a new sheet name or output range), downstream steps can bind to it
+- Available binding fields depend on the action: outputRange, sheetName, tableName, pivotName, etc.
+- Example: step_1 creates a sheet → step_2 uses "{{{{step_1.sheetName}}}}!A1" as its target range
+- Example: step_1 writes data to an outputRange → step_2 charts "{{{{step_1.outputRange}}}}"
+- The executor resolves bindings before executing each step, so use dependsOn to ensure order
+- Only use bindings when the output value is truly dynamic — if you know the range/name statically, use the literal value
+
 MULTI-STEP PLANS:
 - Use as many steps as the task genuinely requires — do not artificially limit to one step
 - Use "dependsOn": ["step_id"] when a step must run after another (e.g. step_2 depends on step_1)
@@ -173,7 +182,7 @@ USING THE WORKBOOK SNAPSHOT (critical for grounded plans):
 - When data looks dirty in the snapshot (blank header cells, inconsistent dtypes, numbers stored as text), propose a CLEAN-THEN-ACT plan: fillBlanks/cleanupText/findReplace first, then the user's requested operation.
 - OFFSET TABLES: the snapshot reports "data starts at <cell>" and "used range" — these are the TRUTH. If the data starts at C5, the first data row is row 6, not row 2, and the first column is C, not A. Build ALL ranges, formulas, writeFormula cell targets, and fillDown counts relative to that anchor. Never assume A1. Use the used-range address verbatim when you need to reference the whole table.
 - For cross-sheet operations, use the snapshot to identify candidate join keys (same header name across sheets, or same dtype profile). Always name the exact sheets and columns in your plan.
-- CRITICAL: The snapshot shows ONLY the first 5 data rows as a SAMPLE. It does NOT contain the full dataset. You CANNOT see the actual data. NEVER answer ANY question about data values, counts, sums, averages, minimums, maximums, percentages, duplicates, matches, mismatches, trends, or patterns by looking at sample rows — your answer WILL be wrong. This includes ALL of these question types:
+- CRITICAL: The snapshot shows ONLY the first ~10 data rows as a SAMPLE. It does NOT contain the full dataset. You CANNOT see the actual data. NEVER answer ANY question about data values, counts, sums, averages, minimums, maximums, percentages, duplicates, matches, mismatches, trends, or patterns by looking at sample rows — your answer WILL be wrong. This includes ALL of these question types:
   • "how many X?" / "count X" → writeFormula with COUNTIF/COUNTIFS
   • "what is the total/sum?" → writeFormula with SUM/SUMIF/SUMIFS
   • "what is the average/mean?" → writeFormula with AVERAGE/AVERAGEIF
@@ -185,7 +194,7 @@ USING THE WORKBOOK SNAPSHOT (critical for grounded plans):
   • "what percentage?" → writeFormula with COUNTIF divided by COUNTA
   • "is there any X?" / "does X exist?" → writeFormula with COUNTIF or MATCH
   • "show me the trend" → createChart or addSparkline
-  • ANY question that requires reading more than the 5 visible sample rows → ALWAYS produce a plan
+  • ANY question that requires reading more than the visible sample rows → ALWAYS produce a plan
   You MAY answer directly from the snapshot ONLY for structural questions: "what columns exist?", "what sheet has dates?", "what dtype is column C?", "how many rows total?" (rowCount is accurate).
 
 writeFormula RULES (critical):
@@ -403,7 +412,7 @@ def _build_user_content(request: ChatRequest) -> str:
             )
             snap_lines.append(f"    cols: {header_pairs}")
             if s.sampleRows:
-                for offset, row in enumerate(s.sampleRows[:3], start=1):
+                for offset, row in enumerate(s.sampleRows[:10], start=1):
                     cells = " | ".join(
                         ("" if v is None else str(v))[:30] for v in row
                     )
@@ -411,6 +420,31 @@ def _build_user_content(request: ChatRequest) -> str:
         if request.workbookSnapshot.truncated:
             snap_lines.append("  (additional sheets truncated)")
         parts.append("\n".join(snap_lines))
+
+    # Multi-turn refinement: inject execution context from a failed plan
+    if request.executionContext:
+        ctx = request.executionContext
+        replan_lines: list[str] = [
+            "\n⚠ PLAN REFINEMENT — a previous plan FAILED during execution. Fix it!",
+            f"  Original plan ID: {ctx.originalPlanId}",
+            f"  Original user request: {ctx.originalUserRequest}",
+            "  Execution results:",
+        ]
+        for sr in ctx.stepResults:
+            status_icon = "✓" if sr.status == "success" else "✗" if sr.status == "error" else "⊘"
+            replan_lines.append(f"    {status_icon} {sr.stepId}: {sr.status} — {sr.message}")
+            if sr.error:
+                replan_lines.append(f"      Error: {sr.error}")
+        if ctx.failedStepId:
+            replan_lines.append(f"  Failed at: {ctx.failedStepId} (action: {ctx.failedStepAction})")
+            replan_lines.append(f"  Error: {ctx.failedStepError}")
+        replan_lines.append(
+            "\n  INSTRUCTIONS: Generate a CORRECTED plan that fixes the failed step. "
+            "Steps that succeeded already wrote their data — do NOT re-run them. "
+            "Start your new plan from the step that failed, with corrected params. "
+            "If earlier steps need changes too, include them but mark them clearly."
+        )
+        parts.append("\n".join(replan_lines))
 
     return "\n".join(parts)
 

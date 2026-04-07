@@ -154,6 +154,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Created PivotTable "${pivotName}" — rows: ${rows.join(", ")} | values: ${values.map((v) => v.field).join(", ")}`,
+    outputs: { pivotName },
   };
 }
 

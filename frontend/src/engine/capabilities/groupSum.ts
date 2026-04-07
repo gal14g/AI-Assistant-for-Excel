@@ -104,6 +104,7 @@ async function formulaGroupSum(
     stepId: "",
     status: "success",
     message: `Created ${uniqueKeys.length} SUMIF formulas in ${params.outputRange}`,
+    outputs: { outputRange: params.outputRange, groupCount: uniqueKeys.length },
   };
 }
 
@@ -148,6 +149,7 @@ async function computedGroupSum(
     stepId: "",
     status: "success",
     message: `Computed ${groups.size} group sums, wrote to ${params.outputRange}`,
+    outputs: { outputRange: params.outputRange, groupCount: groups.size },
   };
 }
 

@@ -58,6 +58,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Created table "${table.name}" with style ${table.style}`,
+    outputs: { tableName: table.name, tableRange: address },
   };
 }
 

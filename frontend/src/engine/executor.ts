@@ -28,6 +28,37 @@ import { registry } from "./capabilityRegistry";
 import { captureSnapshotBatched, rollbackPlan } from "./snapshot";
 import { validatePlan } from "./validator";
 
+// ---------------------------------------------------------------------------
+// Step output binding — resolve {{step_N.field}} references in params
+// ---------------------------------------------------------------------------
+
+/** Regex matching a binding token like {{step_1.outputRange}} */
+const BINDING_RE = /\{\{(step_\d+)\.(\w+)\}\}/g;
+
+/**
+ * Deep-clone params and replace any {{step_N.field}} tokens with the
+ * actual value from that step's result.outputs.
+ */
+function resolveBindings(
+  params: Record<string, unknown>,
+  resultsMap: Map<string, StepResult>,
+): Record<string, unknown> {
+  const json = JSON.stringify(params);
+  const resolved = json.replace(BINDING_RE, (_match, stepId: string, field: string) => {
+    const result = resultsMap.get(stepId);
+    if (!result?.outputs || !(field in result.outputs)) {
+      // Leave as-is if unresolvable (will likely error downstream — intentional)
+      return _match;
+    }
+    const val = result.outputs[field];
+    // If the replacement sits inside a JSON string, return the raw value.
+    // If it's a number/boolean that was the entire string value, we still
+    // return the string form because it's embedded in a JSON string token.
+    return String(val).replace(/"/g, '\\"');
+  });
+  return JSON.parse(resolved) as Record<string, unknown>;
+}
+
 export interface ExecutorCallbacks {
   onStepStart: (step: PlanStep) => void;
   onStepComplete: (step: PlanStep, result: StepResult) => void;
@@ -68,6 +99,8 @@ export async function executePlan(
   const orderedSteps = topologicalSort(plan.steps);
 
   const completedSteps = new Set<string>();
+  /** Map of stepId → result for output binding between steps */
+  const stepResultsMap = new Map<string, StepResult>();
 
   for (const step of orderedSteps) {
     // Check dependencies are met
@@ -80,52 +113,71 @@ export async function executePlan(
           message: `Skipped: unmet dependencies [${unmet.join(", ")}]`,
         };
         state.stepResults.push(result);
+        stepResultsMap.set(step.id, result);
         callbacks.onStepComplete(step, result);
         continue;
       }
     }
 
-    callbacks.onStepStart(step);
+    // Resolve {{step_N.field}} bindings in params before execution
+    let resolvedStep = step;
+    if (stepResultsMap.size > 0) {
+      try {
+        const resolvedParams = resolveBindings(
+          step.params as Record<string, unknown>,
+          stepResultsMap,
+        );
+        resolvedStep = { ...step, params: resolvedParams as typeof step.params };
+      } catch {
+        // If binding resolution fails, proceed with original params
+        resolvedStep = step;
+      }
+    }
 
-    const handler = registry.getHandler(step.action);
+    callbacks.onStepStart(resolvedStep);
+
+    const handler = registry.getHandler(resolvedStep.action);
     if (!handler) {
       const result: StepResult = {
-        stepId: step.id,
+        stepId: resolvedStep.id,
         status: "error",
-        message: `No handler registered for action: ${step.action}`,
-        error: `Unknown action: ${step.action}`,
+        message: `No handler registered for action: ${resolvedStep.action}`,
+        error: `Unknown action: ${resolvedStep.action}`,
       };
       state.stepResults.push(result);
+      stepResultsMap.set(resolvedStep.id, result);
       state.status = "failed";
-      callbacks.onError(step.id, result.error!);
-      callbacks.onStepComplete(step, result);
+      callbacks.onError(resolvedStep.id, result.error!);
+      callbacks.onStepComplete(resolvedStep, result);
       break;
     }
 
     try {
-      const result = await executeStep(step, handler, execOptions, callbacks, plan.planId);
+      const result = await executeStep(resolvedStep, handler, execOptions, callbacks, plan.planId);
       state.stepResults.push(result);
-      callbacks.onStepComplete(step, result);
+      stepResultsMap.set(resolvedStep.id, result);
+      callbacks.onStepComplete(resolvedStep, result);
 
       if (result.status === "error") {
         state.status = "failed";
-        callbacks.onError(step.id, result.error ?? "Unknown error");
+        callbacks.onError(resolvedStep.id, result.error ?? "Unknown error");
         break;
       }
 
-      completedSteps.add(step.id);
+      completedSteps.add(resolvedStep.id);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       const result: StepResult = {
-        stepId: step.id,
+        stepId: resolvedStep.id,
         status: "error",
         message: `Exception: ${errorMsg}`,
         error: errorMsg,
       };
       state.stepResults.push(result);
+      stepResultsMap.set(resolvedStep.id, result);
       state.status = "failed";
-      callbacks.onError(step.id, errorMsg);
-      callbacks.onStepComplete(step, result);
+      callbacks.onError(resolvedStep.id, errorMsg);
+      callbacks.onStepComplete(resolvedStep, result);
       break;
     }
   }

@@ -54,6 +54,7 @@ for (const sa of sheetActions) {
             stepId: "",
             status: "success",
             message: `Sheet "${params.sheetName}" already exists — using it`,
+            outputs: { sheetName: params.sheetName },
           };
         }
         const newSheet = context.workbook.worksheets.add(params.sheetName);
@@ -63,6 +64,7 @@ for (const sa of sheetActions) {
           stepId: "",
           status: "success",
           message: `Added sheet "${newSheet.name}"`,
+          outputs: { sheetName: newSheet.name },
         };
       }
 

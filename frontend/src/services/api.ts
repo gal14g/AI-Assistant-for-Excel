@@ -24,6 +24,21 @@ export interface WorkbookSnapshotDTO {
   truncated: boolean;
 }
 
+/** Execution context from a failed plan — enables multi-turn refinement. */
+export interface ExecutionContextDTO {
+  originalPlanId: string;
+  originalUserRequest: string;
+  stepResults: {
+    stepId: string;
+    status: "success" | "error" | "skipped" | "preview";
+    message: string;
+    error?: string;
+  }[];
+  failedStepId?: string;
+  failedStepAction?: string;
+  failedStepError?: string;
+}
+
 export interface ChatRequest {
   userMessage: string;
   rangeTokens?: { address: string; sheetName: string }[];
@@ -38,6 +53,8 @@ export interface ChatRequest {
    *  sample rows, inferred dtypes. Lets the planner ground its plan in the
    *  actual data instead of guessing column names. */
   workbookSnapshot?: WorkbookSnapshotDTO;
+  /** Multi-turn refinement: execution state from a failed plan. */
+  executionContext?: ExecutionContextDTO;
 }
 
 export interface ChatResponse {

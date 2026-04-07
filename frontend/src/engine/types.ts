@@ -957,6 +957,12 @@ export interface StepResult {
   /** Data read by the step (for readRange) */
   data?: unknown;
   error?: string;
+  /**
+   * Output metadata from this step, available for binding in downstream steps.
+   * Steps can populate fields like outputRange, sheetName, tableName, etc.
+   * Downstream steps reference them via {{step_N.outputRange}}.
+   */
+  outputs?: Record<string, string | number | boolean>;
 }
 
 export interface ExecutionState {

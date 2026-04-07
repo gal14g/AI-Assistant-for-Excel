@@ -31,6 +31,8 @@ interface PlanExecutionActions {
   undoLast: (planId: string) => Promise<boolean>;
   /** Reset execution state */
   reset: () => void;
+  /** Whether the last execution failed and is eligible for refinement */
+  canRefine: boolean;
 }
 
 export function usePlanExecution(): PlanExecutionState & PlanExecutionActions {
@@ -176,6 +178,12 @@ export function usePlanExecution(): PlanExecutionState & PlanExecutionActions {
     setLastError(null);
   }, []);
 
+  // A plan is refinable if it failed (has at least one error step)
+  const canRefine = !!(
+    executionState?.status === "failed" &&
+    executionState.stepResults.some((r) => r.status === "error")
+  );
+
   return {
     executionState,
     validationResult,
@@ -187,5 +195,6 @@ export function usePlanExecution(): PlanExecutionState & PlanExecutionActions {
     runPlan,
     undoLast,
     reset,
+    canRefine,
   };
 }

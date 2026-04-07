@@ -58,6 +58,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Wrote ${values.length} rows to ${address}`,
+    outputs: { outputRange: address, rowsWritten: values.length },
   };
 }
 

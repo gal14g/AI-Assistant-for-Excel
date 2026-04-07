@@ -84,9 +84,9 @@ class TestSnapshotInjection:
 
 
 class TestAllActionsAccepted:
-    def test_all_51_actions_have_param_models(self):
-        assert len(list(StepAction)) == 51
-        assert len(ACTION_PARAM_MODELS) == 51
+    def test_all_76_actions_have_param_models(self):
+        assert len(list(StepAction)) == 76
+        assert len(ACTION_PARAM_MODELS) == 76
         for action in StepAction:
             assert action in ACTION_PARAM_MODELS, f"{action} missing from ACTION_PARAM_MODELS"
 
