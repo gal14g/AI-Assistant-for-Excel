@@ -185,7 +185,7 @@ ai-assistant-for-excel/
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/gal14g/ai-assistant-for-excel.git
+git clone https://github.com/gal14g/AI-Assistant-for-Excel.git
 cd ai-assistant-for-excel
 ```
 
