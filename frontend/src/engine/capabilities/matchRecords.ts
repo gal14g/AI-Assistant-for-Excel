@@ -65,7 +65,11 @@ async function handler(
   const lookupCols = countColumnsInAddr(stripWorkbookQualifier(lookupRange));
   const sourceCols = countColumnsInAddr(stripWorkbookQualifier(sourceRange));
 
-  if (lookupCols > 1 || sourceCols > 1 || params.writeValue !== undefined) {
+  // Route to composite match when:
+  // - Multi-column ranges (XLOOKUP/VLOOKUP only support single-column)
+  // - writeValue is set (write a constant for matched rows)
+  // - matchType is "contains" (substring matching — formulas can't do this)
+  if (lookupCols > 1 || sourceCols > 1 || params.writeValue !== undefined || params.matchType === "contains") {
     return await compositeKeyMatch(context, { ...params, returnColumns }, options);
   }
 

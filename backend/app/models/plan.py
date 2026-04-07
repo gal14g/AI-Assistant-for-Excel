@@ -9,7 +9,7 @@ The validator checks them before they are sent to the frontend.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -91,7 +91,7 @@ class MatchRecordsParams(BaseModel):
     lookupRange: str
     sourceRange: str
     returnColumns: Optional[list[int]] = None  # defaults to [1] (first source column)
-    matchType: str = "exact"
+    matchType: Literal["exact", "contains", "approximate"] = "exact"
     outputRange: str
     preferFormula: Optional[bool] = True
     # When set, write this constant string for matched rows (forces composite key matching)

@@ -221,8 +221,11 @@ VALIDATION RULES:
 - For unique values only: validationType="custom", formula="=COUNTIF($A$1:$A$100,A1)<=1"
 
 MATCH RULES (critical):
-- To write a constant ("pass", "yes", "✓") to a column based on a match: use matchRecords with writeValue="pass" — NEVER use writeValues for this
-- For single-column lookup: matchRecords with lookupRange="Sheet1!A:A", sourceRange="Sheet2!A:A", returnColumns=[2], outputRange="Sheet1!C:C"
+- matchType: "exact" = values must be identical; "contains" = substring/partial match (value A is contained in value B or vice versa); "approximate" = sorted approximate
+- When the user says "contained in" / "exists in" / "is in" / "מוכל" / "נמצא ב" → ALWAYS set matchType="contains"
+- When writing a constant ("pass", "yes", "v", "✓") to a column for matched rows: set writeValue="v" — NEVER use writeValues for this
+- For single-column lookup returning a value: matchRecords with lookupRange="Sheet1!A:A", sourceRange="Sheet2!A:A", returnColumns=[2], outputRange="Sheet1!C:C"
+- For single-column match writing a constant: matchRecords with lookupRange="Sheet1!B:B", sourceRange="Sheet2!A:A", outputRange="Sheet1!I:I", writeValue="v", matchType="contains"
 - For MULTI-COLUMN composite match (matching 2+ columns together): matchRecords with lookupRange="Sheet1!C:D" (2-col range), sourceRange="Sheet2!A:B" (2-col range), outputRange="Sheet1!I:I", writeValue="pass"
 - NEVER set values: ["pass"] in a writeValues step to simulate a match — use matchRecords with writeValue instead
 
