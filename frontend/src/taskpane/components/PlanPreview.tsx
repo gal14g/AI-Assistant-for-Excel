@@ -143,6 +143,7 @@ export const PlanPreview: React.FC<Props> = React.memo(({
     </div>
   );
 });
+PlanPreview.displayName = "PlanPreview";
 
 const primaryBtn = (disabled: boolean): React.CSSProperties => ({
   padding: "7px 18px", border: "none", borderRadius: 6,

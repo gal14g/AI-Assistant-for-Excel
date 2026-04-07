@@ -22,7 +22,7 @@ import aiosqlite
 from .config import settings
 
 if TYPE_CHECKING:
-    from .models.chat import ChatResponse, RangeToken
+    from .models.chat import ChatResponse, RangeTokenRef as RangeToken
 
 logger = logging.getLogger(__name__)
 

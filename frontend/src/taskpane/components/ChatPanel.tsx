@@ -31,9 +31,11 @@ export const ChatPanel: React.FC = () => {
 
   // Stable refs so effects don't need the whole `chat` object in their dep array
   const updateMessageRef = useRef(chat.updateMessage);
-  updateMessageRef.current = chat.updateMessage;
   const conversationIdRef = useRef(chat.conversationId);
-  conversationIdRef.current = chat.conversationId;
+  useEffect(() => {
+    updateMessageRef.current = chat.updateMessage;
+    conversationIdRef.current = chat.conversationId;
+  });
 
   // Track the last executed plan ID so undo works after execution completes
   const [lastExecutedPlanId, setLastExecutedPlanId] = useState<string | null>(null);

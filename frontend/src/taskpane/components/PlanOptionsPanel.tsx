@@ -93,3 +93,4 @@ export const PlanOptionsPanel: React.FC<Props> = React.memo(({
     </div>
   );
 });
+PlanOptionsPanel.displayName = "PlanOptionsPanel";

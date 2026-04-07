@@ -35,6 +35,17 @@ services:
       # ── Generation params ───────────────────────────────────────────────────
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-4096}
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
+      LLM_JSON_MODE: ${LLM_JSON_MODE:-false}
+
+      # ── Embedding / search ──────────────────────────────────────────────────
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      CAPABILITY_TOP_K: ${CAPABILITY_TOP_K:-10}
+      FEW_SHOT_TOP_K: ${FEW_SHOT_TOP_K:-5}
+
+      # ── Air-gap / telemetry ─────────────────────────────────────────────────
+      ANONYMIZED_TELEMETRY: "False"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
 
       # ── Deployment mode ─────────────────────────────────────────────────────
       OPENSHIFT: "true"

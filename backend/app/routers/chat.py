@@ -45,7 +45,7 @@ async def chat_endpoint(request: Request, body: ChatRequest) -> ChatResponse:
     # Validate all plans before returning
     if result.responseType == "plans" and result.plans:
         valid_options = []
-        all_errors = []
+        all_errors: list[str] = []
         for i, option in enumerate(result.plans):
             validation = validate_plan(option.plan)
             if validation.valid:

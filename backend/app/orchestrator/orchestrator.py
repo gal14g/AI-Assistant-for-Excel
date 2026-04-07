@@ -193,7 +193,7 @@ class Orchestrator:
                 return sheet
             columns = _coerce_list(params.get("columns") or params.get("key_columns") or [])
             options = params.get("options") or params.get("clean_options") or None
-            return tool_module.clean_columns(sheet, columns=columns, options=options)
+            return tool_module.clean_columns(sheet, columns=columns, operations=options)
 
         # ── Matchability ──────────────────────────────────────────────────────
 

@@ -224,6 +224,7 @@ export const PresetMenu: React.FC<Props> = React.memo(({ presets, onSelect, onDe
     </div>
   );
 });
+PresetMenu.displayName = "PresetMenu";
 
 const actionBtnStyle: React.CSSProperties = {
   background: "none",
