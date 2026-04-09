@@ -15,7 +15,7 @@ flowchart TB
         API["api.ts — sendChatMessageStream()"]
         Exec["Executor — executePlan()"]
         Snap["Snapshot — captureSnapshot()"]
-        Handlers["Capability Handlers (50+)"]
+        Handlers["Capability Handlers (76)"]
         Registry["capabilityRegistry.ts"]
         Validator_FE["Validator (frontend)"]
     end
@@ -243,13 +243,13 @@ flowchart LR
             Snapshot["snapshot.ts"]
             Validator["validator.ts"]
             CapReg["capabilityRegistry.ts"]
-            subgraph Caps["capabilities/ (50+ files)"]
+            subgraph Caps["capabilities/ (76 actions)"]
                 writeValues["writeValues.ts"]
                 writeFormula["writeFormula.ts"]
                 matchRecords["matchRecords.ts"]
                 createChart["createChart.ts"]
                 createPivot["createPivot.ts"]
-                moreActions["… 45 more"]
+                moreActions["… 71 more"]
             end
         end
         subgraph Services["services/"]
@@ -277,7 +277,7 @@ flowchart LR
             chatModel["chat.py — ChatRequest/Response"]
             planModel["plan.py — ExecutionPlan, PlanStep"]
             actionsModel["actions.py — StepAction enum"]
-            paramsModel["params/ — 50+ param models"]
+            paramsModel["params/ — 76 param models"]
         end
         subgraph Orchestrator["orchestrator/"]
             orch["orchestrator.py"]
@@ -387,7 +387,7 @@ flowchart LR
     end
 
     subgraph ChromaDB
-        CapColl["capabilities collection\n(50+ action descriptions)"]
+        CapColl["capabilities collection\n(76 action descriptions)"]
         ExColl["few_shot_examples collection\n(27 seed + user-promoted)"]
     end
 
