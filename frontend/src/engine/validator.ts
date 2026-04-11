@@ -67,7 +67,52 @@ export function validatePlan(plan: ExecutionPlan): ValidationResult {
     errors.push(cycleError);
   }
 
+  // Check that any {{step_N.field}} bindings reference real steps
+  validateBindings(plan.steps, errors);
+
   return { valid: errors.length === 0, errors, warnings };
+}
+
+/** Regex matching a binding token like {{step_1.outputRange}}. Mirrors the executor's resolver. */
+const BINDING_TOKEN_RE = /\{\{(step_\w+)\.(\w+)\}\}/g;
+
+/**
+ * Scan every step's params for {{step_N.field}} tokens and verify each
+ * referenced step actually exists in the plan. Catches typos and
+ * hallucinated step references at validation time, before the executor
+ * fails with an unactionable Office.js error.
+ */
+function validateBindings(steps: PlanStep[], errors: ValidationIssue[]): void {
+  const stepIds = new Set(steps.map((s) => s.id));
+  for (const step of steps) {
+    if (!step.params) continue;
+    let json: string;
+    try {
+      json = JSON.stringify(step.params);
+    } catch {
+      continue;
+    }
+    if (!json.includes("{{step_")) continue;
+    const seen = new Set<string>();
+    for (const m of json.matchAll(BINDING_TOKEN_RE)) {
+      const refStepId = m[1];
+      if (seen.has(refStepId)) continue;
+      seen.add(refStepId);
+      if (!stepIds.has(refStepId)) {
+        errors.push({
+          stepId: step.id,
+          message: `Param contains binding "${m[0]}" but step "${refStepId}" is not defined in the plan`,
+          code: "INVALID_BINDING",
+        });
+      } else if (refStepId === step.id) {
+        errors.push({
+          stepId: step.id,
+          message: `Param contains binding "${m[0]}" referencing this same step (self-reference)`,
+          code: "INVALID_BINDING",
+        });
+      }
+    }
+  }
 }
 
 function validateStep(

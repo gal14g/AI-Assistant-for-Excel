@@ -3,7 +3,8 @@
  *
  * These tests verify that:
  * 1. Binding tokens are resolved before step execution
- * 2. Missing bindings are left as-is (graceful fallback)
+ * 2. Unresolvable bindings throw a clear, actionable error (instead of
+ *    silently leaving the literal token to crash Office.js downstream)
  * 3. Multiple bindings in one param string work
  * 4. Bindings work with numeric and boolean output values
  * 5. Deeply nested params are resolved
@@ -16,22 +17,33 @@
 
 import type { StepResult } from "../engine/types";
 
-// Replicate the binding resolution logic from executor.ts for unit testing
-const BINDING_RE = /\{\{(step_\d+)\.(\w+)\}\}/g;
+// Replicate the binding resolution logic from executor.ts for unit testing.
+// Keep this in sync with the real implementation in executor.ts.
+const BINDING_RE = /\{\{(step_\w+)\.(\w+)\}\}/g;
 
 function resolveBindings(
   params: Record<string, unknown>,
   resultsMap: Map<string, StepResult>,
 ): Record<string, unknown> {
   const json = JSON.stringify(params);
+  const errors: string[] = [];
   const resolved = json.replace(BINDING_RE, (_match, stepId: string, field: string) => {
     const result = resultsMap.get(stepId);
-    if (!result?.outputs || !(field in result.outputs)) {
+    if (!result) {
+      errors.push(`${_match}: step '${stepId}' has not run (missing from plan or earlier failure)`);
+      return _match;
+    }
+    if (!result.outputs || !(field in result.outputs)) {
+      const available = result.outputs ? Object.keys(result.outputs).join(", ") || "none" : "none";
+      errors.push(`${_match}: step '${stepId}' did not produce '${field}' (available: ${available})`);
       return _match;
     }
     const val = result.outputs[field];
     return String(val).replace(/"/g, '\\"');
   });
+  if (errors.length > 0) {
+    throw new Error(`Unresolved step binding(s): ${errors.join("; ")}`);
+  }
   return JSON.parse(resolved) as Record<string, unknown>;
 }
 
@@ -82,25 +94,25 @@ describe("resolveBindings", () => {
     expect(resolved.staticParam).toBe("untouched");
   });
 
-  it("leaves unresolvable bindings as-is", () => {
+  it("throws a clear error when a referenced field doesn't exist on the step", () => {
     const resultsMap = new Map<string, StepResult>();
-    // step_1 exists but doesn't have the requested field
+    // step_1 ran but didn't produce the requested field
     resultsMap.set("step_1", makeResult({ sheetName: "Data" }));
 
     const params = { range: "{{step_1.nonExistentField}}" };
-    const resolved = resolveBindings(params, resultsMap);
-
-    expect(resolved.range).toBe("{{step_1.nonExistentField}}");
+    expect(() => resolveBindings(params, resultsMap)).toThrow(
+      /Unresolved step binding.*step_1.*did not produce 'nonExistentField'.*available: sheetName/,
+    );
   });
 
-  it("leaves bindings for missing steps as-is", () => {
+  it("throws a clear error when the referenced step never ran", () => {
     const resultsMap = new Map<string, StepResult>();
     // step_99 was never executed
 
     const params = { range: "{{step_99.outputRange}}" };
-    const resolved = resolveBindings(params, resultsMap);
-
-    expect(resolved.range).toBe("{{step_99.outputRange}}");
+    expect(() => resolveBindings(params, resultsMap)).toThrow(
+      /Unresolved step binding.*step_99.*has not run/,
+    );
   });
 
   it("handles numeric output values", () => {

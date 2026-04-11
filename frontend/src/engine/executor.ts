@@ -38,16 +38,28 @@ const BINDING_RE = /\{\{(step_\d+)\.(\w+)\}\}/g;
 /**
  * Deep-clone params and replace any {{step_N.field}} tokens with the
  * actual value from that step's result.outputs.
+ *
+ * Throws a clear error when a binding cannot be resolved instead of
+ * silently leaving the literal token in place — Office.js's "invalid
+ * range" error for a literal `{{step_1.outputRange}}` is unactionable,
+ * but `Cannot resolve {{step_1.outputRange}}: step_1 did not produce
+ * 'outputRange'` tells the user exactly what's wrong.
  */
 function resolveBindings(
   params: Record<string, unknown>,
   resultsMap: Map<string, StepResult>,
 ): Record<string, unknown> {
   const json = JSON.stringify(params);
+  const errors: string[] = [];
   const resolved = json.replace(BINDING_RE, (_match, stepId: string, field: string) => {
     const result = resultsMap.get(stepId);
-    if (!result?.outputs || !(field in result.outputs)) {
-      // Leave as-is if unresolvable (will likely error downstream — intentional)
+    if (!result) {
+      errors.push(`${_match}: step '${stepId}' has not run (missing from plan or earlier failure)`);
+      return _match;
+    }
+    if (!result.outputs || !(field in result.outputs)) {
+      const available = result.outputs ? Object.keys(result.outputs).join(", ") || "none" : "none";
+      errors.push(`${_match}: step '${stepId}' did not produce '${field}' (available: ${available})`);
       return _match;
     }
     const val = result.outputs[field];
@@ -56,7 +68,66 @@ function resolveBindings(
     // return the string form because it's embedded in a JSON string token.
     return String(val).replace(/"/g, '\\"');
   });
+  if (errors.length > 0) {
+    throw new Error(`Unresolved step binding(s): ${errors.join("; ")}`);
+  }
   return JSON.parse(resolved) as Record<string, unknown>;
+}
+
+/**
+ * Build an actionable error for an action that isn't in the registry.
+ *
+ * The validator catches truly invalid action names. If we still get here,
+ * it means the action *is* schema-valid but no handler is wired up — almost
+ * always a bundle/version mismatch between the backend planner and the
+ * frontend add-in. Suggest similarly-named registered actions to help the
+ * user spot stale builds.
+ *
+ * Exported for unit testing.
+ */
+export function buildUnknownActionError(action: string): string {
+  const known = registry.listActions();
+  const suggestions = findSimilarActions(action, known, 3);
+  const suggestionText = suggestions.length > 0
+    ? ` Did you mean: ${suggestions.join(", ")}?`
+    : "";
+  return (
+    `No handler registered for action "${action}". ` +
+    `This usually means the add-in bundle is out of date — the backend ` +
+    `planner knows about an action that the frontend hasn't shipped a ` +
+    `handler for yet. Try reloading the add-in (Ctrl+F5).` +
+    suggestionText
+  );
+}
+
+/** Tiny edit-distance based similarity ranker — no external deps. */
+function findSimilarActions(target: string, candidates: string[], limit: number): string[] {
+  const t = target.toLowerCase();
+  const scored = candidates
+    .map((c) => ({ name: c, dist: levenshtein(t, c.toLowerCase()) }))
+    // Only suggest reasonably-close matches (within ~40% of target length)
+    .filter((x) => x.dist <= Math.max(2, Math.floor(target.length * 0.4)))
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, limit);
+  return scored.map((s) => s.name);
+}
+
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prev = new Array(b.length + 1);
+  let curr = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[b.length];
 }
 
 export interface ExecutorCallbacks {
@@ -121,16 +192,31 @@ export async function executePlan(
 
     // Resolve {{step_N.field}} bindings in params before execution
     let resolvedStep = step;
-    if (stepResultsMap.size > 0) {
+    const stepHasBindings = JSON.stringify(step.params).includes("{{step_");
+    if (stepHasBindings) {
       try {
         const resolvedParams = resolveBindings(
           step.params as Record<string, unknown>,
           stepResultsMap,
         );
         resolvedStep = { ...step, params: resolvedParams as typeof step.params };
-      } catch {
-        // If binding resolution fails, proceed with original params
-        resolvedStep = step;
+      } catch (err) {
+        // Binding resolution failed — fail this step with an actionable
+        // message instead of passing literal {{...}} tokens to Office.js,
+        // which would produce a cryptic "invalid range" error.
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const result: StepResult = {
+          stepId: step.id,
+          status: "error",
+          message: errorMsg,
+          error: errorMsg,
+        };
+        state.stepResults.push(result);
+        stepResultsMap.set(step.id, result);
+        state.status = "failed";
+        callbacks.onError(step.id, errorMsg);
+        callbacks.onStepComplete(step, result);
+        break;
       }
     }
 
@@ -138,16 +224,22 @@ export async function executePlan(
 
     const handler = registry.getHandler(resolvedStep.action);
     if (!handler) {
+      // Reaching here usually means: validator accepted the action (so the
+      // name is in the schema) but no handler is wired up in the registry.
+      // That's almost always a stale add-in bundle — capabilities/index.ts
+      // didn't import the handler module, or the user is on an older build
+      // than the backend planner. Surface that explicitly.
+      const errorMsg = buildUnknownActionError(resolvedStep.action);
       const result: StepResult = {
         stepId: resolvedStep.id,
         status: "error",
-        message: `No handler registered for action: ${resolvedStep.action}`,
-        error: `Unknown action: ${resolvedStep.action}`,
+        message: errorMsg,
+        error: errorMsg,
       };
       state.stepResults.push(result);
       stepResultsMap.set(resolvedStep.id, result);
       state.status = "failed";
-      callbacks.onError(resolvedStep.id, result.error!);
+      callbacks.onError(resolvedStep.id, errorMsg);
       callbacks.onStepComplete(resolvedStep, result);
       break;
     }

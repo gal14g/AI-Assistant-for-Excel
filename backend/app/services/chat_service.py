@@ -22,7 +22,7 @@ from typing import AsyncIterator
 
 from ..config import settings
 from ..models.chat import ChatRequest, ChatResponse, PlanOption
-from ..models.plan import ExecutionPlan
+from ..models.plan import ExecutionPlan, StepAction
 from ..services.planner import CAPABILITY_DESCRIPTIONS, extract_json
 from ..services.llm_client import acompletion, acompletion_stream
 
@@ -105,6 +105,7 @@ AVAILABLE EXCEL ACTIONS:
 
 PLAN RULES:
 1. Never output executable code — only JSON plans
+1b. ACTION NAMES are a CLOSED VOCABULARY. Every step.action MUST be copied verbatim from the AVAILABLE EXCEL ACTIONS list above. NEVER invent, abbreviate, paraphrase, or compose action names like "manualStep", "moveRows", "doIt", "customAction", etc. If no single action fits, COMPOSE the task from existing actions across multiple steps (e.g. "move rows by condition" = readRange/matchRecords → writeValues at destination → deleteRowsByCondition at source). If a task is genuinely impossible with the listed actions, return responseType "message" explaining what's missing.
 2. Prefer native Excel formulas (writeFormula) over computed values (writeValues)
 3. Use exact range references from [[...]] tokens in the user message when provided.
    CRITICAL: Extract only the address INSIDE the [[...]] markers — do NOT include [[ or ]] in the JSON.
@@ -503,7 +504,8 @@ FORMAT B — for spreadsheet operations:
 Available actions: {actions_str}
 
 RULES:
-- "action" must be one of the listed actions
+- "action" must be EXACTLY one of the listed actions above — copy verbatim, never invent or paraphrase
+- If no single action fits, compose the task from multiple steps using actions from the list
 - "params" must contain the action's parameters
 - Reply in the SAME language as the user
 - Extract ranges from [[...]] tokens — use the address inside, not the brackets
@@ -516,6 +518,87 @@ RULES:
         {"role": "system", "content": system},
         {"role": "user", "content": _build_user_content(request)},
     ]
+
+
+_VALID_ACTION_NAMES: frozenset[str] = frozenset(a.value for a in StepAction)
+_BINDING_TOKEN_RE = re.compile(r"\{\{(step_\w+)\.(\w+)\}\}")
+
+
+def _validate_step_actions(plan_data: dict) -> None:
+    """Pre-validate step actions before Pydantic touches them.
+
+    Smaller models occasionally hallucinate action names that don't exist
+    in the StepAction enum (e.g. ``manualStep``). The default Pydantic
+    error for that case is a 76-item enum dump that retries can't make
+    sense of. This raises a short, LLM-actionable error naming the bad
+    actions and the closest valid suggestions, so the retry prompt can
+    surface a concrete fix.
+
+    Also catches {{step_N.field}} bindings that reference non-existent
+    steps or self-reference the current step — same crash class.
+    """
+    from difflib import get_close_matches
+
+    steps = plan_data.get("steps") or []
+    bad: list[tuple[str, list[str]]] = []
+    for s in steps:
+        if not isinstance(s, dict):
+            continue
+        action = s.get("action")
+        if isinstance(action, str) and action not in _VALID_ACTION_NAMES:
+            suggestions = get_close_matches(action, _VALID_ACTION_NAMES, n=3, cutoff=0.4)
+            bad.append((action, suggestions))
+    if bad:
+        details = "; ".join(
+            f"'{name}' (try: {', '.join(sugg) if sugg else 'pick from the catalog'})"
+            for name, sugg in bad
+        )
+        raise ValueError(
+            f"Invalid action name(s): {details}. "
+            f"Every step.action MUST be copied verbatim from AVAILABLE EXCEL ACTIONS — never invent names."
+        )
+
+    # Validate {{step_N.field}} bindings reference real, earlier steps
+    step_ids: set[str] = set()
+    for s in steps:
+        if isinstance(s, dict) and isinstance(s.get("id"), str):
+            step_ids.add(s["id"])
+    if not step_ids:
+        return
+
+    binding_errors: list[str] = []
+    for s in steps:
+        if not isinstance(s, dict):
+            continue
+        params = s.get("params")
+        if not isinstance(params, dict):
+            continue
+        try:
+            params_json = _json.dumps(params)
+        except (TypeError, ValueError):
+            continue
+        if "{{step_" not in params_json:
+            continue
+        seen: set[str] = set()
+        for m in _BINDING_TOKEN_RE.finditer(params_json):
+            ref = m.group(1)
+            if ref in seen:
+                continue
+            seen.add(ref)
+            if ref not in step_ids:
+                binding_errors.append(
+                    f"step '{s.get('id', '?')}' references {m.group(0)} but no step '{ref}' exists"
+                )
+            elif ref == s.get("id"):
+                binding_errors.append(
+                    f"step '{s.get('id', '?')}' references {m.group(0)} (self-reference)"
+                )
+    if binding_errors:
+        raise ValueError(
+            "Invalid step binding(s): "
+            + "; ".join(binding_errors[:3])
+            + ". Bindings like {{step_N.field}} must reference an EARLIER step that exists in the plan."
+        )
 
 
 def _fill_plan_defaults(plan_data: dict, request: ChatRequest) -> ExecutionPlan:
@@ -558,6 +641,7 @@ def _fill_plan_defaults(plan_data: dict, request: ChatRequest) -> ExecutionPlan:
         plan_data["summary"] = request.userMessage[:100]
     if "confidence" not in plan_data:
         plan_data["confidence"] = 0.7
+    _validate_step_actions(plan_data)
     return ExecutionPlan(**plan_data)
 
 
@@ -584,30 +668,42 @@ def _infer_action_from_keys(d: dict) -> str | None:
     return None
 
 
-def _normalize_param_keys(params: dict) -> dict:
-    """Convert snake_case keys to camelCase for common off-schema outputs."""
-    snake_to_camel = {
-        "lookup_range": "lookupRange",
-        "source_range": "sourceRange",
-        "output_range": "outputRange",
-        "return_columns": "returnColumns",
-        "match_type": "matchType",
-        "write_value": "writeValue",
-        "lookup_column": "lookupRange",
-        "source_columns": "returnColumns",
-        "target_columns": "outputRange",
-        "data_range": "dataRange",
-        "chart_type": "chartType",
-        "group_by_column": "groupByColumn",
-        "sum_column": "sumColumn",
-        "sort_fields": "sortFields",
-        "fill_down": "fillDown",
-        "prefer_formula": "preferFormula",
-    }
-    result = {}
-    for k, v in params.items():
-        result[snake_to_camel.get(k, k)] = v
-    return result
+_SNAKE_TO_CAMEL_OVERRIDES = {
+    # Semantic remappings (NOT just case conversion — these are different names)
+    "lookup_column": "lookupRange",
+    "source_columns": "returnColumns",
+    "target_columns": "outputRange",
+}
+
+_SNAKE_RE = re.compile(r"_([a-z])")
+
+
+def _snake_to_camel(key: str) -> str:
+    """Convert a snake_case key to camelCase. Leaves non-snake keys untouched."""
+    if "_" not in key:
+        return key
+    if key in _SNAKE_TO_CAMEL_OVERRIDES:
+        return _SNAKE_TO_CAMEL_OVERRIDES[key]
+    return _SNAKE_RE.sub(lambda m: m.group(1).upper(), key)
+
+
+def _normalize_param_keys(params):
+    """Recursively convert snake_case dict keys to camelCase.
+
+    Weaker LLMs sometimes emit Python-style snake_case (e.g. ``source_range``)
+    instead of the schema's camelCase (``sourceRange``). This converter rescues
+    those plans before Pydantic rejects them. Recurses into nested dicts and
+    list elements so nested params (rules, criteria, etc.) are also fixed.
+
+    Values themselves are never modified — only dict keys. Cell-data arrays
+    like ``values: [[...]]`` pass through untouched because their elements
+    are scalars, not dicts.
+    """
+    if isinstance(params, dict):
+        return {_snake_to_camel(k): _normalize_param_keys(v) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_normalize_param_keys(item) for item in params]
+    return params
 
 
 def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
@@ -677,16 +773,41 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
         response_type = "message"
 
     # New multi-option format: responseType "plans" with array
-    if response_type == "plans" and parsed.get("plans"):
+    raw_plans = parsed.get("plans")
+    if response_type == "plans" and isinstance(raw_plans, list) and raw_plans:
         options: list[PlanOption] = []
-        for i, opt in enumerate(parsed["plans"]):
-            plan_data = opt.get("plan", opt)  # handle both {optionLabel, plan} and bare plan
-            if isinstance(plan_data, dict):
+        option_failures: list[str] = []
+        for i, opt in enumerate(raw_plans):
+            # Skip non-dict array elements (e.g. LLM emitted plans: ["text"])
+            if not isinstance(opt, dict):
+                option_failures.append(f"option {i}: not a dict")
+                continue
+            try:
+                plan_data = opt.get("plan", opt)  # handle both {optionLabel, plan} and bare plan
+                if not isinstance(plan_data, dict):
+                    option_failures.append(f"option {i}: plan field is not a dict")
+                    continue
                 plan_data = _normalize_param_keys(plan_data)
-            plan = _fill_plan_defaults(plan_data, request)
-            label = opt.get("optionLabel", f"Option {chr(65 + i)}")
-            options.append(PlanOption(optionLabel=label, plan=plan))
+                plan = _fill_plan_defaults(plan_data, request)
+                label = opt.get("optionLabel", f"Option {chr(65 + i)}")
+                options.append(PlanOption(optionLabel=label, plan=plan))
+            except Exception as exc:
+                # Skip the bad option but keep the good ones — one hallucinated
+                # action in option B should not throw away options A and C.
+                option_failures.append(f"option {i}: {exc}")
+        # If every option failed, surface a useful error to the retry path
+        if not options and option_failures:
+            raise ValueError(
+                "All plan options failed validation: " + "; ".join(option_failures[:3])
+            )
         if options:
+            if option_failures:
+                logger.info(
+                    "Dropped %d/%d invalid plan options: %s",
+                    len(option_failures),
+                    len(raw_plans),
+                    "; ".join(option_failures[:3]),
+                )
             # Sort options by simplicity (fewest steps first) so Option A
             # is always the simplest viable approach.
             options.sort(key=lambda o: len(o.plan.steps))
@@ -704,8 +825,9 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
             )
 
     # Backward compat: single plan (from few-shot examples or simpler LLM output)
-    if response_type == "plan" and parsed.get("plan"):
-        plan = _fill_plan_defaults(parsed["plan"], request)
+    raw_plan = parsed.get("plan")
+    if response_type == "plan" and isinstance(raw_plan, dict):
+        plan = _fill_plan_defaults(raw_plan, request)
         option = PlanOption(optionLabel="Option A", plan=plan)
         return ChatResponse(
             responseType="plans",
@@ -849,44 +971,58 @@ async def chat_stream(request: ChatRequest) -> AsyncIterator[str]:
 
     The frontend accumulates chunks to display a live preview, then uses
     the final "done" event to render the plan/message properly.
-    """
-    from .capability_store import search_capabilities
 
-    relevant_actions = search_capabilities(request.userMessage)
+    A ``done`` event is **always** emitted, even if prompt construction or
+    capability lookup raises before any LLM call. The frontend depends on
+    that terminal event to leave its "thinking" state — silently dropping
+    the connection would leave the UI hung indefinitely.
+    """
     interaction_id = str(uuid.uuid4())
     start = time.monotonic()
-
-    full_text = ""
     result: ChatResponse | None = None
-    failure_reason: str | None = None
 
-    async def _stream_attempt(messages: list[dict]) -> AsyncIterator[str]:
-        nonlocal full_text, result, failure_reason
+    try:
+        from .capability_store import search_capabilities
+
+        relevant_actions = search_capabilities(request.userMessage)
+
         full_text = ""
-        try:
-            async for chunk in acompletion_stream(messages):
-                full_text += chunk
-                yield f"data: {_json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-            result = _parse_response(full_text, request)
-        except Exception as exc:
-            logger.warning(
-                "Stream attempt failed: %s | raw LLM output (first 500 chars): %r",
-                exc,
-                full_text[:500],
-            )
-            failure_reason = str(exc)[:500]
+        failure_reason: str | None = None
 
-    # Attempt 1: full prompt with few-shot examples
-    async for sse in _stream_attempt(await _build_chat_messages(request, relevant_actions)):
-        yield sse
+        async def _stream_attempt(messages: list[dict]) -> AsyncIterator[str]:
+            nonlocal full_text, result, failure_reason
+            full_text = ""
+            try:
+                async for chunk in acompletion_stream(messages):
+                    full_text += chunk
+                    yield f"data: {_json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                result = _parse_response(full_text, request)
+            except Exception as exc:
+                logger.warning(
+                    "Stream attempt failed: %s | raw LLM output (first 500 chars): %r",
+                    exc,
+                    full_text[:500],
+                )
+                failure_reason = str(exc)[:500]
 
-    # Attempt 2: stripped prompt if parse failed
-    if result is None:
-        # Tell the frontend to clear the bad partial text before retrying
-        yield f"data: {_json.dumps({'type': 'reset'})}\n\n"
-        full_text = ""
-        async for sse in _stream_attempt(_build_retry_messages(request, relevant_actions, failure_reason)):
+        # Attempt 1: full prompt with few-shot examples
+        async for sse in _stream_attempt(await _build_chat_messages(request, relevant_actions)):
             yield sse
+
+        # Attempt 2: stripped prompt if parse failed
+        if result is None:
+            # Tell the frontend to clear the bad partial text before retrying
+            yield f"data: {_json.dumps({'type': 'reset'})}\n\n"
+            async for sse in _stream_attempt(
+                _build_retry_messages(request, relevant_actions, failure_reason)
+            ):
+                yield sse
+    except Exception as exc:
+        # Catches failures *outside* _stream_attempt: prompt build, capability
+        # lookup, or any unexpected error before/between attempts. Without this,
+        # the SSE stream would close with no terminal event and the UI hangs.
+        logger.exception("chat_stream failed before producing a result: %s", exc)
+        result = None  # fall through to the safety-net response below
 
     if result is None:
         result = ChatResponse(
@@ -897,7 +1033,10 @@ async def chat_stream(request: ChatRequest) -> AsyncIterator[str]:
 
     latency_ms = int((time.monotonic() - start) * 1000)
     result.interactionId = interaction_id
-    await _log_interaction_safe(interaction_id, request, result, latency_ms)
-    await _persist_conversation_turn(request, result)
+    try:
+        await _log_interaction_safe(interaction_id, request, result, latency_ms)
+        await _persist_conversation_turn(request, result)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Post-stream bookkeeping failed: %s", exc)
 
     yield f"data: {_json.dumps({'type': 'done', 'result': result.model_dump(mode='json')})}\n\n"

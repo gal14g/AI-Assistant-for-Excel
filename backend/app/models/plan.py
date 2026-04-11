@@ -141,7 +141,7 @@ class CreateTableParams(BaseModel):
 
 
 class FilterCriteria(BaseModel):
-    filterOn: str  # "values" | "topItems" | "custom"
+    filterOn: Literal["values", "topItems", "custom"]
     values: Optional[list[str]] = None
     operator: Optional[str] = None
     value: Optional[Union[str, int, float]] = None
@@ -182,7 +182,9 @@ class CreatePivotParams(BaseModel):
 
 class CreateChartParams(BaseModel):
     dataRange: str
-    chartType: str
+    chartType: Literal[
+        "columnClustered", "columnStacked", "bar", "line", "pie", "area", "scatter", "combo",
+    ]
     title: Optional[str] = None
     sheetName: Optional[str] = None
     position: Optional[dict] = None
@@ -191,7 +193,7 @@ class CreateChartParams(BaseModel):
 
 class AddConditionalFormatParams(BaseModel):
     range: str
-    ruleType: str
+    ruleType: Literal["cellValue", "formula", "colorScale", "dataBar", "iconSet", "text"]
     operator: Optional[str] = None
     values: Optional[list[Union[str, int, float]]] = None
     format: Optional[dict] = None
@@ -226,7 +228,7 @@ class FindReplaceParams(BaseModel):
 
 class AddValidationParams(BaseModel):
     range: str
-    validationType: str
+    validationType: Literal["list", "wholeNumber", "decimal", "date", "textLength", "custom"]
     listValues: Optional[list[str]] = None
     operator: Optional[str] = None
     min: Optional[Union[int, float, str]] = None
@@ -260,7 +262,7 @@ class AutoFitColumnsParams(BaseModel):
 
 class MergeCellsParams(BaseModel):
     range: str
-    mergeType: Optional[str] = "merge"  # "merge" | "mergeAcross" | "mergeAllCells"
+    mergeType: Optional[Literal["merge", "mergeAcross", "mergeAllCells"]] = "merge"
 
 class SetNumberFormatParams(BaseModel):
     range: str
@@ -269,13 +271,13 @@ class SetNumberFormatParams(BaseModel):
 
 class InsertDeleteRowsParams(BaseModel):
     range: str
-    shiftDirection: str  # "down" | "up" | "right" | "left"
+    shiftDirection: Literal["down", "up", "right", "left"]
 
 
 class AddSparklineParams(BaseModel):
     dataRange: str
     locationRange: str
-    sparklineType: Optional[str] = "line"  # "line" | "column" | "winLoss"
+    sparklineType: Optional[Literal["line", "column", "winLoss"]] = "line"
     color: Optional[str] = None
 
 
@@ -303,11 +305,11 @@ class FormatCellsParams(BaseModel):
 
 class ClearRangeParams(BaseModel):
     range: str
-    clearType: str = "contents"
+    clearType: Literal["contents", "formats", "all"] = "contents"
 
 
 class HideShowParams(BaseModel):
-    target: str
+    target: Literal["sheet", "rows", "columns"]
     rangeOrName: str
     hide: bool = True
 
@@ -326,19 +328,19 @@ class AddHyperlinkParams(BaseModel):
 
 class GroupRowsParams(BaseModel):
     range: str
-    operation: str = "group"
+    operation: Literal["group", "ungroup"] = "group"
 
 
 class SetRowColSizeParams(BaseModel):
     range: str
-    dimension: str
+    dimension: Literal["rowHeight", "columnWidth"]
     size: float
 
 
 class CopyPasteRangeParams(BaseModel):
     sourceRange: str
     destinationRange: str
-    pasteType: Optional[str] = "all"
+    pasteType: Optional[Literal["all", "values", "formats", "formulas"]] = "all"
 
 
 class PageLayoutMargins(BaseModel):
@@ -353,7 +355,7 @@ class PageLayoutMargins(BaseModel):
 class PageLayoutParams(BaseModel):
     sheetName: Optional[str] = None
     margins: Optional[PageLayoutMargins] = None
-    orientation: Optional[str] = None  # "portrait" | "landscape"
+    orientation: Optional[Literal["portrait", "landscape"]] = None
     paperSize: Optional[str] = None
     printArea: Optional[str] = None
     showGridlines: Optional[bool] = None
@@ -399,7 +401,7 @@ class InsertTextBoxParams(BaseModel):
 
 class AddSlicerParams(BaseModel):
     sheetName: Optional[str] = None
-    sourceType: str  # "pivotTable" | "table"
+    sourceType: Literal["pivotTable", "table"]
     sourceName: str
     sourceField: str
     left: Optional[float] = None
@@ -429,7 +431,7 @@ class CrossTabulateParams(BaseModel):
     rowField: int
     columnField: int
     valueField: int
-    aggregation: str  # "count" | "sum" | "average"
+    aggregation: Literal["count", "sum", "average"]
     outputRange: str
 
 
@@ -451,7 +453,7 @@ class CompareSheetsParams(BaseModel):
 class ConsolidateRangesParams(BaseModel):
     sourceRanges: list[str]
     outputRange: str
-    direction: Optional[str] = "vertical"  # "vertical" | "horizontal"
+    direction: Optional[Literal["vertical", "horizontal"]] = "vertical"
     addSourceLabel: Optional[bool] = False
     deduplicate: Optional[bool] = False
 
@@ -464,7 +466,9 @@ class ExtractPatternParams(BaseModel):
 
 
 class CategorizeRule(BaseModel):
-    operator: str  # "contains" | "equals" | "startsWith" | "endsWith" | "greaterThan" | "lessThan" | "regex"
+    operator: Literal[
+        "contains", "equals", "startsWith", "endsWith", "greaterThan", "lessThan", "regex",
+    ]
     value: Union[str, int, float]
     label: str
 
@@ -478,7 +482,7 @@ class CategorizeParams(BaseModel):
 
 class FillBlanksParams(BaseModel):
     range: str
-    fillMode: Optional[str] = "down"  # "down" | "up" | "constant"
+    fillMode: Optional[Literal["down", "up", "constant"]] = "down"
     constantValue: Optional[Union[str, int, float]] = None
 
 
@@ -486,7 +490,7 @@ class SubtotalsParams(BaseModel):
     dataRange: str
     groupByColumn: int
     subtotalColumns: list[int]
-    aggregation: Optional[str] = "sum"  # "sum" | "count" | "average"
+    aggregation: Optional[Literal["sum", "count", "average"]] = "sum"
     subtotalLabel: Optional[str] = None
 
 
@@ -497,7 +501,7 @@ class TransposeParams(BaseModel):
 
 
 class NamedRangeParams(BaseModel):
-    operation: str  # "create" | "update" | "delete"
+    operation: Literal["create", "update", "delete"]
     name: str
     range: Optional[str] = None
     sheetName: Optional[str] = None

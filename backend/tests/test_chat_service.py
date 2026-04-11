@@ -9,7 +9,24 @@ Specifically verifies:
 
 from app.models.chat import ChatRequest, SheetSnapshot, WorkbookSnapshot
 from app.models.plan import ExecutionPlan, StepAction, ACTION_PARAM_MODELS
-from app.services.chat_service import _build_user_content, _build_retry_messages
+from app.services.chat_service import (
+    _build_user_content,
+    _build_retry_messages,
+    _validate_step_actions,
+    _parse_response,
+    _normalize_param_keys,
+    chat_stream,
+)
+from app.services.validator import validate_plan
+import pytest
+
+
+def _make_plan(action: str, params: dict) -> ExecutionPlan:
+    return ExecutionPlan(
+        planId="x", createdAt="2026", userRequest="u", summary="s",
+        confidence=0.9, preserveFormatting=True,
+        steps=[{"id": "step_1", "description": "d", "action": action, "params": params}],
+    )
 
 
 class TestSnapshotInjection:
@@ -133,3 +150,325 @@ class TestRetryPromptFeedback:
         msgs = _build_retry_messages(req, None, failure_reason=None)
         system = msgs[0]["content"]
         assert "previous attempt failed" not in system
+
+
+class TestStepActionValidation:
+    """Regression tests for hallucinated action names like 'manualStep'.
+
+    Pydantic's enum validator emits a 76-item dump that the retry path
+    can't make sense of. _validate_step_actions intercepts these earlier
+    and produces a short, LLM-actionable failure_reason.
+    """
+
+    def test_valid_actions_pass(self):
+        _validate_step_actions({"steps": [
+            {"action": "writeValues"},
+            {"action": "matchRecords"},
+            {"action": "createChart"},
+        ]})
+
+    def test_empty_steps_pass(self):
+        _validate_step_actions({"steps": []})
+        _validate_step_actions({})
+
+    def test_hallucinated_action_raises_actionable_error(self):
+        with pytest.raises(ValueError) as exc:
+            _validate_step_actions({"steps": [{"action": "manualStep"}]})
+        msg = str(exc.value)
+        assert "manualStep" in msg
+        assert "Invalid action name" in msg
+        assert "never invent" in msg.lower()
+
+    def test_multiple_bad_actions_all_reported(self):
+        with pytest.raises(ValueError) as exc:
+            _validate_step_actions({"steps": [
+                {"action": "writeValues"},
+                {"action": "doIt"},
+                {"action": "magicMove"},
+            ]})
+        msg = str(exc.value)
+        assert "doIt" in msg
+        assert "magicMove" in msg
+
+    def test_close_match_suggestions_offered(self):
+        # "writevalue" should suggest writeValues / writeValue
+        with pytest.raises(ValueError) as exc:
+            _validate_step_actions({"steps": [{"action": "writevalue"}]})
+        msg = str(exc.value)
+        assert "writeValues" in msg or "writeValue" in msg
+
+    def test_non_string_action_skipped(self):
+        # Non-string actions are left for Pydantic's normal validation path
+        _validate_step_actions({"steps": [{"action": None}, {"action": 42}]})
+
+
+class TestStepBindingValidation:
+    """{{step_N.field}} bindings must reference real, earlier steps.
+
+    Bindings to non-existent steps would otherwise reach the executor as
+    literal "{{step_99.outputRange}}" strings and produce a cryptic
+    Office.js "invalid range" error.
+    """
+
+    def test_valid_binding_passes(self):
+        _validate_step_actions({"steps": [
+            {"id": "step_1", "action": "addSheet", "params": {"sheetName": "X"}},
+            {"id": "step_2", "action": "writeValues", "params": {
+                "range": "{{step_1.sheetName}}!A1", "values": [["a"]],
+            }},
+        ]})
+
+    def test_binding_to_missing_step_raises(self):
+        with pytest.raises(ValueError) as exc:
+            _validate_step_actions({"steps": [
+                {"id": "step_1", "action": "writeValues", "params": {
+                    "range": "{{step_99.outputRange}}", "values": [["a"]],
+                }},
+            ]})
+        msg = str(exc.value)
+        assert "step_99" in msg
+        assert "binding" in msg.lower()
+
+    def test_self_referencing_binding_raises(self):
+        with pytest.raises(ValueError) as exc:
+            _validate_step_actions({"steps": [
+                {"id": "step_1", "action": "writeValues", "params": {
+                    "range": "{{step_1.outputRange}}", "values": [["a"]],
+                }},
+            ]})
+        assert "self-reference" in str(exc.value)
+
+    def test_no_bindings_no_check(self):
+        # Plain plans without bindings shouldn't even hit the binding validator
+        _validate_step_actions({"steps": [
+            {"id": "step_1", "action": "writeValues", "params": {"range": "A1", "values": [["a"]]}},
+        ]})
+
+
+class TestParseResponseTypeGuards:
+    """Defensive type guards for malformed LLM JSON shapes.
+
+    Weaker models sometimes emit `plans` as a string, an array of strings,
+    or `plan` as a non-dict. These should not crash with AttributeError —
+    they should fall through to the parse-failure retry path with a clean
+    error message.
+    """
+
+    def _req(self):
+        return ChatRequest(userMessage="test")
+
+    def test_plans_as_string_does_not_crash(self):
+        # plans is a string, not a list — must not raise AttributeError
+        result = _parse_response(
+            '{"responseType":"plans","plans":"not a list","message":"hi"}',
+            self._req(),
+        )
+        # Falls through to message path since plans isn't a list
+        assert result.responseType == "message"
+
+    def test_plans_array_with_non_dict_elements_skipped(self):
+        # plans contains a string element — should be skipped, not crash
+        with pytest.raises(ValueError):
+            _parse_response(
+                '{"responseType":"plans","plans":["just a string"]}',
+                self._req(),
+            )
+
+    def test_plans_array_one_bad_one_good_keeps_good(self):
+        # The good option should survive even if one option has a bad action
+        good_step = '{"id":"s1","description":"d","action":"writeValues","params":{"range":"A1","values":[["x"]]}}'
+        good_plan = '{"summary":"good","steps":[' + good_step + ']}'
+        bad_step = '{"id":"s1","description":"d","action":"manualStep","params":{}}'
+        bad_plan = '{"summary":"bad","steps":[' + bad_step + ']}'
+        text = (
+            '{"responseType":"plans","message":"hi","plans":['
+            '{"optionLabel":"Option A","plan":' + bad_plan + '},'
+            '{"optionLabel":"Option B","plan":' + good_plan + '}'
+            ']}'
+        )
+        result = _parse_response(text, self._req())
+        # Good option survived
+        assert result.responseType == "plans"
+        assert len(result.plans) == 1
+        assert result.plans[0].plan.steps[0].action.value == "writeValues"
+
+    def test_singular_plan_as_non_dict_does_not_crash(self):
+        # plan is a string instead of a dict — must not crash
+        result = _parse_response(
+            '{"responseType":"plan","plan":"not a dict","message":"hi"}',
+            self._req(),
+        )
+        assert result.responseType == "message"
+
+
+class TestLiteralEnumTightening:
+    """A1: bare-string control-vocab fields are now Literal[...].
+
+    These Literals are enforced through ``validate_plan``, which runs each
+    step's params through the matching ``ACTION_PARAM_MODELS`` entry.
+    Hallucinated values like ``chartType="spaghetti"`` should produce an
+    INVALID_PARAMS error. Free-form data fields (range, values, formula,
+    dateFormat, etc.) and Hebrew strings remain unaffected.
+    """
+
+    def test_chart_type_rejects_garbage(self):
+        # Direct param model rejection
+        with pytest.raises(ValueError):
+            ACTION_PARAM_MODELS[StepAction.createChart](
+                dataRange="A1:B10", chartType="spaghetti"
+            )
+        # And via validate_plan
+        plan = _make_plan("createChart", {"dataRange": "A1:B10", "chartType": "spaghetti"})
+        result = validate_plan(plan)
+        assert not result.valid
+        assert any("chartType" in e.message or "spaghetti" in e.message for e in result.errors)
+
+    def test_chart_type_accepts_all_supported(self):
+        for ct in ["columnClustered", "columnStacked", "bar", "line", "pie", "area", "scatter", "combo"]:
+            model = ACTION_PARAM_MODELS[StepAction.createChart](dataRange="A1:B10", chartType=ct)
+            assert model.chartType == ct
+
+    def test_named_range_operation_rejects_garbage(self):
+        with pytest.raises(ValueError):
+            ACTION_PARAM_MODELS[StepAction.namedRange](
+                operation="manifest", name="X", range="A1"
+            )
+
+    def test_clear_range_type_rejects_garbage(self):
+        with pytest.raises(ValueError):
+            ACTION_PARAM_MODELS[StepAction.clearRange](
+                range="A1:B10", clearType="everything"
+            )
+
+    def test_categorize_rule_operator_rejects_garbage(self):
+        with pytest.raises(ValueError):
+            ACTION_PARAM_MODELS[StepAction.categorize](
+                sourceRange="A:A", outputRange="B:B",
+                rules=[{"operator": "fuzzymatch", "value": "x", "label": "X"}],
+            )
+
+    def test_freeform_string_fields_still_accept_anything(self):
+        """outputFormat must remain free-form (Hebrew, custom patterns, etc.)."""
+        model = ACTION_PARAM_MODELS[StepAction.normalizeDates](
+            range="A:A", outputFormat="יום dd חודש mm שנה yyyy",
+        )
+        assert "יום" in model.outputFormat
+
+    def test_hebrew_range_addresses_unaffected(self):
+        """Range strings carry sheet names that may be Hebrew — must pass through."""
+        model = ACTION_PARAM_MODELS[StepAction.writeValues](
+            range="נתונים!A1:B5", values=[["שלום", "world"]],
+        )
+        assert model.range == "נתונים!A1:B5"
+
+    def test_number_strings_in_values_pass_through(self):
+        """Cell data like '123' or '0042' must NOT be coerced or rejected."""
+        model = ACTION_PARAM_MODELS[StepAction.writeValues](
+            range="A1:A3", values=[["0042"], ["1.5e10"], ["١٢٣"]],  # last is Arabic-Indic digits
+        )
+        # Pydantic preserves the strings as-is
+        assert model.values[0][0] == "0042"
+        assert model.values[2][0] == "١٢٣"
+
+
+class TestNormalizeParamKeys:
+    """F1: snake_case → camelCase normalization, including a generic fallback."""
+
+    def test_explicit_overrides_remap_semantically(self):
+        # lookup_column → lookupRange (different name, not just case)
+        out = _normalize_param_keys({"lookup_column": "A:A", "match_type": "exact"})
+        assert out == {"lookupRange": "A:A", "matchType": "exact"}
+
+    def test_generic_snake_to_camel_for_unknown_keys(self):
+        # Keys not in the explicit map should still be converted
+        out = _normalize_param_keys({"some_brand_new_param": 42, "another_one": "x"})
+        assert out == {"someBrandNewParam": 42, "anotherOne": "x"}
+
+    def test_already_camel_case_unchanged(self):
+        out = _normalize_param_keys({"sourceRange": "A:A", "outputRange": "B:B"})
+        assert out == {"sourceRange": "A:A", "outputRange": "B:B"}
+
+    def test_recurses_into_nested_dicts(self):
+        out = _normalize_param_keys({
+            "outer_key": {"inner_snake_key": "v"},
+        })
+        assert out == {"outerKey": {"innerSnakeKey": "v"}}
+
+    def test_recurses_into_list_of_dicts(self):
+        # Mirrors how categorize/rules work
+        out = _normalize_param_keys({
+            "rules": [
+                {"match_value": "x", "label_text": "X"},
+                {"match_value": "y", "label_text": "Y"},
+            ],
+        })
+        assert out == {
+            "rules": [
+                {"matchValue": "x", "labelText": "X"},
+                {"matchValue": "y", "labelText": "Y"},
+            ],
+        }
+
+    def test_cell_data_arrays_pass_through_untouched(self):
+        # values is a 2D array of cell data — strings inside must NOT be mutated
+        out = _normalize_param_keys({
+            "range": "A1:B2",
+            "values": [["snake_value", "another_one"], [1, 2]],
+        })
+        assert out == {
+            "range": "A1:B2",
+            "values": [["snake_value", "another_one"], [1, 2]],
+        }
+
+    def test_hebrew_keys_unchanged(self):
+        # Hebrew chars don't match the snake_case regex — passthrough
+        out = _normalize_param_keys({"שדה": "ערך"})
+        assert out == {"שדה": "ערך"}
+
+
+class TestChatStreamRobustness:
+    """E1: chat_stream must always emit a terminal `done` event.
+
+    Failures inside prompt construction or capability lookup must not
+    silently close the SSE stream — the frontend depends on `done` to
+    leave its "thinking" state.
+    """
+
+    @pytest.mark.asyncio
+    async def test_done_event_emitted_when_capability_lookup_raises(self, monkeypatch):
+        # Force search_capabilities to blow up
+        from app.services import capability_store
+
+        def boom(_msg):
+            raise RuntimeError("capability index unavailable")
+
+        monkeypatch.setattr(capability_store, "search_capabilities", boom)
+
+        req = ChatRequest(userMessage="anything")
+        events = []
+        async for sse in chat_stream(req):
+            events.append(sse)
+
+        # Must have produced at least one event, and the last must be `done`
+        assert events, "chat_stream produced no SSE events at all"
+        assert '"type": "done"' in events[-1]
+
+    @pytest.mark.asyncio
+    async def test_done_event_emitted_when_prompt_build_raises(self, monkeypatch):
+        # Make _build_chat_messages explode
+        from app.services import chat_service as cs
+
+        async def boom(*_a, **_kw):
+            raise RuntimeError("prompt construction failed")
+
+        monkeypatch.setattr(cs, "_build_chat_messages", boom)
+
+        req = ChatRequest(userMessage="anything")
+        events = []
+        async for sse in chat_stream(req):
+            events.append(sse)
+
+        assert events
+        assert '"type": "done"' in events[-1]
+        # The fallback message should be present in the final result
+        assert "couldn't process" in events[-1] or "Sorry" in events[-1]

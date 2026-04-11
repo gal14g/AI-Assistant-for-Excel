@@ -153,6 +153,40 @@ describe("validatePlan — binding tokens are passthrough", () => {
   });
 });
 
+describe("validatePlan — invalid binding references", () => {
+  // Bindings that reference non-existent step IDs would otherwise reach
+  // the executor as literal "{{step_99.outputRange}}" strings and produce
+  // a cryptic Office.js "invalid range" error.
+
+  it("rejects bindings to a step that does not exist", () => {
+    const plan = makePlan([
+      makeStep({
+        id: "step_1", action: "writeValues",
+        params: { range: "{{step_99.outputRange}}", values: [["x"]] } as never,
+      }),
+    ]);
+    const result = validatePlan(plan);
+    expect(result.valid).toBe(false);
+    const bindingErr = result.errors.find((e) => e.code === "INVALID_BINDING");
+    expect(bindingErr).toBeDefined();
+    expect(bindingErr!.message).toContain("step_99");
+  });
+
+  it("rejects self-referencing bindings", () => {
+    const plan = makePlan([
+      makeStep({
+        id: "step_1", action: "writeValues",
+        params: { range: "{{step_1.outputRange}}", values: [["x"]] } as never,
+      }),
+    ]);
+    const result = validatePlan(plan);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(
+      (e) => e.code === "INVALID_BINDING" && e.message.includes("self-reference"),
+    )).toBe(true);
+  });
+});
+
 describe("validatePlan — Hebrew sheet names in plans", () => {
   it("accepts plans with Hebrew range addresses", () => {
     const plan = makePlan([
