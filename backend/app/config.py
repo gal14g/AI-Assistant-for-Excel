@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     llm_json_mode: bool = False
 
     # ── Embedding / Capability Search ────────────────────────────────────────
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
     chroma_persist_dir: str = ""          # auto-resolved to backend/data/chroma if empty
     capability_top_k: int = 25
 
