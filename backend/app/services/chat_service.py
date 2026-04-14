@@ -284,8 +284,18 @@ FIXING SPILL / #REF / #VALUE ERRORS:
 
 PIVOT FIELD RULES:
 - rows and values accept either header names ("Department") or range addresses ("Sheet2!A:A")
-- ALWAYS include rows and values in createPivot when the user specifies them — never drop them
+- ALWAYS include rows and values in createPivot — never omit them. If the user says "summary by Rep", rows=["Rep"] and values MUST be the NUMERIC column to aggregate (e.g. "Amount", "Sales", "Total"), NOT dates or text columns.
+- ALWAYS specify values explicitly with the correct summarizeBy function. NEVER leave values empty — the auto-detect fallback is unreliable.
+- Example: "sales summary by rep" → rows: ["Rep"], values: [{{"field": "Amount", "summarizeBy": "sum"}}]
+- Example: "count orders by region" → rows: ["Region"], values: [{{"field": "OrderID", "summarizeBy": "count"}}]
 - Example: user says "rows = [[Sheet2!A:A]]" → use rows: ["Sheet2!A:A"] (the handler resolves it)
+- CRITICAL: Look at the workbook snapshot to identify the correct numeric column for values. Use the dtype hints: [number] columns are suitable for sum/average, [text] columns for count, [date] columns for count (never sum).
+
+SPARKLINE RULES:
+- Params: dataRange (REQUIRED — the data source, e.g. "Sheet1!B2:M10"), locationRange (REQUIRED — where to place the sparklines, e.g. "Sheet1!N2:N10"), sparklineType (optional — "line"|"column"|"winLoss", default "line"), color (optional — hex color)
+- dataRange is the horizontal range of values (one row per sparkline), locationRange is the vertical column of cells where sparklines appear
+- Example: sales data in B2:G5 (4 reps × 6 months), sparklines in H2:H5 → dataRange="Sheet1!B2:G5", locationRange="Sheet1!H2:H5"
+- NEVER use "range" as a param name — use "dataRange" and "locationRange"
 
 CONDITIONAL FORMAT RULES:
 - To highlight a row based on a condition in another column (e.g. "highlight row if column D is blank"): use ruleType="formula" with formula="=$D2=\"\"" applied to the WHOLE ROW range (e.g. "Sheet1!A2:Z1000"). NEVER use ruleType="cellValue" for cross-column or whole-row rules.

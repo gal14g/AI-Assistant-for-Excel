@@ -110,6 +110,9 @@ export function resolveRange(
   context: Excel.RequestContext,
   address: string
 ): Excel.Range {
+  if (!address || typeof address !== "string") {
+    throw new Error(`resolveRange: address is ${address === undefined ? "undefined" : address === null ? "null" : "empty"} — the plan step is missing a required range parameter.`);
+  }
   address = normalizeAddress(address);
   if (!address.includes("!")) {
     // No sheet qualifier — use the active worksheet

@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     llm_api_version: str = ""
 
     # Generation parameters
-    llm_max_tokens: int = 4096
+    llm_max_tokens: int = 8192
     llm_temperature: float = 0.1
 
     # Force JSON output mode (response_format: json_object).

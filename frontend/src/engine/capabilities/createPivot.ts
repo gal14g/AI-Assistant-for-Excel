@@ -58,6 +58,7 @@ async function handler(
   // Small LLMs frequently output range addresses ("Sheet2!A:A") instead of
   // field names ("מספר עובד"). Convert those addresses to actual header names.
   const resolveRef = (ref: string): string => {
+    if (!ref || typeof ref !== "string") return headers[0]; // fallback for undefined/null
     if (headers.includes(ref)) return ref; // already a valid header name
     const colIdx = columnLetterToIndex(extractColumnLetter(ref));
     if (colIdx !== null && colIdx < headers.length) return headers[colIdx];
@@ -86,7 +87,24 @@ async function handler(
     rows = [headers[0]];
   }
   if (!values || values.length === 0 || !values.every((v) => validField(v.field))) {
-    const valueHeader = headers.find((h) => !(rows as string[]).includes(h)) ?? headers[0];
+    // Prefer a numeric column for the value field — dates/text are poor SUM candidates.
+    // Check the second row (first data row) to find columns that contain numbers.
+    const dataRows = (sourceRng.values ?? []).slice(1); // skip header row
+    const candidateHeaders = headers.filter((h) => !(rows as string[]).includes(h));
+    let valueHeader = candidateHeaders[0] ?? headers[0]; // default: first non-row header
+
+    if (dataRows.length > 0) {
+      const numericHeader = candidateHeaders.find((h) => {
+        const colIdx = headers.indexOf(h);
+        // Check if the majority of data values in this column are numbers
+        const numericCount = dataRows.filter(
+          (row) => typeof row[colIdx] === "number"
+        ).length;
+        return numericCount > dataRows.length / 2;
+      });
+      if (numericHeader) valueHeader = numericHeader;
+    }
+
     values = [{ field: valueHeader, summarizeBy: "sum" }];
   }
   if (columns && !columns.every(validField)) columns = undefined;
@@ -167,7 +185,8 @@ async function handler(
  * "D:D"          → "D"
  * "D1"           → "D"
  */
-function extractColumnLetter(address: string): string | null {
+function extractColumnLetter(address: string | undefined | null): string | null {
+  if (!address || typeof address !== "string") return null;
   // Strip workbook qualifier [...]
   const clean = address.replace(/^\[.*?\]/, "");
   // Strip sheet name (everything up to and including "!")
