@@ -29,6 +29,82 @@ import { captureSnapshotBatched, rollbackPlan } from "./snapshot";
 import { validatePlan } from "./validator";
 
 // ---------------------------------------------------------------------------
+// Execution audit log — persistent structured failure data for debugging
+// ---------------------------------------------------------------------------
+
+export interface ExecutionAuditEntry {
+  timestamp: string;
+  planId: string;
+  userRequest: string;
+  status: "completed" | "failed" | "validation_error";
+  totalSteps: number;
+  completedSteps: number;
+  failedStepId?: string;
+  failedAction?: string;
+  failedError?: string;
+  /** Full step results for detailed analysis */
+  stepResults: {
+    stepId: string;
+    action: string;
+    status: string;
+    message: string;
+    durationMs?: number;
+    error?: string;
+    outputKeys?: string[];
+  }[];
+  durationMs: number;
+}
+
+const AUDIT_LOG_KEY = "excelCopilot_executionAudit";
+const MAX_AUDIT_ENTRIES = 50;
+
+/** Retrieve the execution audit log from localStorage. */
+export function getAuditLog(): ExecutionAuditEntry[] {
+  try {
+    const raw = localStorage.getItem(AUDIT_LOG_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Clear the audit log. */
+export function clearAuditLog(): void {
+  localStorage.removeItem(AUDIT_LOG_KEY);
+}
+
+function appendAuditEntry(entry: ExecutionAuditEntry): void {
+  try {
+    const log = getAuditLog();
+    log.push(entry);
+    // Keep only the most recent entries
+    while (log.length > MAX_AUDIT_ENTRIES) log.shift();
+    localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(log));
+  } catch {
+    // localStorage may be unavailable in some contexts — don't crash
+  }
+}
+
+/** Get only failed executions from the audit log. */
+export function getFailedExecutions(): ExecutionAuditEntry[] {
+  return getAuditLog().filter((e) => e.status === "failed" || e.status === "validation_error");
+}
+
+/** Get a human-readable summary of failures for debugging. */
+export function getFailureSummary(): string {
+  const failures = getFailedExecutions();
+  if (failures.length === 0) return "No execution failures recorded.";
+  return failures
+    .map((f) => {
+      const stepInfo = f.failedStepId
+        ? `step ${f.failedStepId} (${f.failedAction}): ${f.failedError}`
+        : "validation error";
+      return `[${f.timestamp}] Plan "${f.userRequest.slice(0, 60)}" — ${stepInfo}`;
+    })
+    .join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Step output binding — resolve {{step_N.field}} references in params
 // ---------------------------------------------------------------------------
 
@@ -146,10 +222,29 @@ export async function executePlan(
   callbacks: ExecutorCallbacks,
   options: { dryRun?: boolean } = {}
 ): Promise<ExecutionState> {
+  const execStart = Date.now();
+
   // Validate first
   const validation = validatePlan(plan);
   if (!validation.valid) {
     const errorMsg = validation.errors.map((e) => e.message).join("; ");
+    // Log validation failures to the audit log
+    appendAuditEntry({
+      timestamp: new Date().toISOString(),
+      planId: plan.planId,
+      userRequest: plan.userRequest,
+      status: "validation_error",
+      totalSteps: plan.steps.length,
+      completedSteps: 0,
+      failedError: errorMsg,
+      stepResults: plan.steps.map((s) => ({
+        stepId: s.id,
+        action: s.action,
+        status: "skipped",
+        message: "Skipped due to validation error",
+      })),
+      durationMs: Date.now() - execStart,
+    });
     throw new Error(`Plan validation failed: ${errorMsg}`);
   }
 
@@ -281,6 +376,39 @@ export async function executePlan(
   }
 
   state.completedAt = new Date().toISOString();
+
+  // Write audit log entry
+  const failedResult = state.stepResults.find((r) => r.status === "error");
+  const failedStep = failedResult
+    ? plan.steps.find((s) => s.id === failedResult.stepId)
+    : undefined;
+  if (!options.dryRun) {
+    appendAuditEntry({
+      timestamp: new Date().toISOString(),
+      planId: plan.planId,
+      userRequest: plan.userRequest,
+      status: state.status === "failed" ? "failed" : "completed",
+      totalSteps: plan.steps.length,
+      completedSteps: state.stepResults.filter((r) => r.status === "success").length,
+      failedStepId: failedResult?.stepId,
+      failedAction: failedStep?.action,
+      failedError: failedResult?.error,
+      stepResults: state.stepResults.map((r) => {
+        const step = plan.steps.find((s) => s.id === r.stepId);
+        return {
+          stepId: r.stepId,
+          action: step?.action ?? "unknown",
+          status: r.status,
+          message: r.message,
+          durationMs: r.durationMs,
+          error: r.error,
+          outputKeys: r.outputs ? Object.keys(r.outputs) : undefined,
+        };
+      }),
+      durationMs: Date.now() - execStart,
+    });
+  }
+
   callbacks.onPlanComplete(state);
   return state;
 }

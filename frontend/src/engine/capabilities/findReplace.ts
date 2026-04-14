@@ -199,6 +199,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Replaced ${replacements} occurrence(s) of "${find}" with "${replace}"${skipNote}`,
+    outputs: { range: address ?? sheetName ?? "active sheet", replacementCount: replacements },
   };
 }
 

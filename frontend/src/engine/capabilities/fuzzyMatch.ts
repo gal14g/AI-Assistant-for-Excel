@@ -114,6 +114,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Fuzzy matched ${matchCount}/${lookupVals.length} rows (threshold ${Math.round(threshold * 100)}%)`,
+    outputs: { outputRange },
   };
 }
 

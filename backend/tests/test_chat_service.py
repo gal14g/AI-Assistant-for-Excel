@@ -244,6 +244,47 @@ class TestStepBindingValidation:
             {"id": "step_1", "action": "writeValues", "params": {"range": "A1", "values": [["a"]]}},
         ]})
 
+    def test_binding_wrong_field_for_action_raises(self):
+        """createChart produces 'chartName', not 'outputRange'. Should fail."""
+        with pytest.raises(ValueError, match="chartName"):
+            _validate_step_actions({"steps": [
+                {"id": "step_1", "action": "createChart", "params": {"dataRange": "A1:B10", "chartType": "line"}},
+                {"id": "step_2", "action": "writeValues", "params": {
+                    "range": "{{step_1.outputRange}}", "values": [["a"]],
+                }},
+            ]})
+
+    def test_binding_correct_field_accepted(self):
+        """addSheet produces 'sheetName'. Binding to it should pass."""
+        _validate_step_actions({"steps": [
+            {"id": "step_1", "action": "addSheet", "params": {"sheetName": "NewSheet"}},
+            {"id": "step_2", "action": "writeValues", "params": {
+                "range": "{{step_1.sheetName}}!A1", "values": [["a"]],
+            }},
+        ]})
+
+    def test_binding_to_no_output_action_raises(self):
+        """freezePanes produces no outputs. Any binding to it should fail."""
+        with pytest.raises(ValueError, match="none"):
+            _validate_step_actions({"steps": [
+                {"id": "step_1", "action": "freezePanes", "params": {"range": "A2"}},
+                {"id": "step_2", "action": "writeValues", "params": {
+                    "range": "{{step_1.range}}", "values": [["a"]],
+                }},
+            ]})
+
+    def test_dependson_auto_inferred_from_bindings(self):
+        """If step_2 binds to step_1 but has no dependsOn, it should be auto-added."""
+        steps_data = {"steps": [
+            {"id": "step_1", "action": "readRange", "params": {"range": "A1:B10"}},
+            {"id": "step_2", "action": "createChart", "params": {
+                "dataRange": "{{step_1.outputRange}}", "chartType": "line",
+            }},
+        ]}
+        _validate_step_actions(steps_data)
+        # dependsOn should have been auto-populated
+        assert "step_1" in steps_data["steps"][1].get("dependsOn", [])
+
 
 class TestParseResponseTypeGuards:
     """Defensive type guards for malformed LLM JSON shapes.

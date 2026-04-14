@@ -79,6 +79,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Categorized ${vals.flat().length} cells — ${summary || "no matches"}`,
+    outputs: { outputRange },
   };
 }
 

@@ -63,6 +63,7 @@ async function handler(
     message: params.range
       ? `Auto-fitted columns in ${params.range}`
       : `Auto-fitted all used columns${params.sheetName ? ` on "${params.sheetName}"` : ""}`,
+    outputs: { range: params.range ?? "" },
   };
 }
 

@@ -84,6 +84,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Created ${rowCount} running total formulas in ${outputRange}`,
+    outputs: { outputRange },
   };
 }
 

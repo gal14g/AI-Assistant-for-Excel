@@ -110,6 +110,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Applied ${validationType} validation to ${address}`,
+    outputs: { range: address },
   };
 }
 

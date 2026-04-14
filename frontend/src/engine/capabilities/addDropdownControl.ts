@@ -107,6 +107,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Added dropdown control to ${cell} with ${optionCount}`,
+    outputs: { range: cell },
   };
 }
 

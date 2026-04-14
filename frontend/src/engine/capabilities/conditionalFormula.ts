@@ -141,6 +141,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Created ${formulas.length} conditional formulas`,
+    outputs: { range: outputAddress },
   };
 }
 

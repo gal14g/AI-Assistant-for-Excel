@@ -69,6 +69,7 @@ async function handler(
       stepId: "",
       status: "success",
       message: `Applied ${criteria.filterOn} filter on column ${columnIndex} of table "${tableNameOrRange}"`,
+      outputs: { range: tableNameOrRange },
     };
   }
 
@@ -104,6 +105,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Applied autoFilter on ${tableNameOrRange} column ${columnIndex}`,
+    outputs: { range: tableNameOrRange },
   };
 }
 

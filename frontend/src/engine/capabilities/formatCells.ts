@@ -147,6 +147,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Formatted ${params.range}: ${changes.join(", ") || "applied"}`,
+    outputs: { range: params.range },
   };
 }
 

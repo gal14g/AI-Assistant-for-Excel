@@ -79,6 +79,7 @@ async function handler(
       stepId: "",
       status: "success",
       message: `Highlighted ${highlighted} difference(s) in ${rangeA}${highlighted < diffs.length ? ` (${diffs.length - highlighted} skipped — merged/protected)` : ""}`,
+      outputs: { outputRange: rangeA },
     };
   }
 
@@ -109,6 +110,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Found ${diffs.length} difference(s) between ${rangeA} and ${rangeB}`,
+    outputs: { outputRange: params.outputRange ?? "Diff_Report!A1" },
   };
 }
 

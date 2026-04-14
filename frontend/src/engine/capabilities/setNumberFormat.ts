@@ -73,6 +73,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Applied format "${params.format}" to ${params.range}`,
+    outputs: { range: params.range },
   };
 }
 

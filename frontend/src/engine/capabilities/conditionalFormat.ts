@@ -122,6 +122,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Applied ${ruleType} conditional format to ${address}`,
+    outputs: { range: address },
   };
 }
 

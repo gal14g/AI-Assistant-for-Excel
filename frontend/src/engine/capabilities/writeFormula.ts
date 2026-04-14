@@ -81,6 +81,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Wrote formula to ${cell}${rowInfo}`,
+    outputs: { cell },
   };
 }
 

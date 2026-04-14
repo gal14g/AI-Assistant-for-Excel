@@ -69,6 +69,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `${opLabel} ${axisLabel} at ${address}`,
+    outputs: { range: address },
   };
 }
 

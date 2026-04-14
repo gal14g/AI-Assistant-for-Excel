@@ -92,12 +92,19 @@ MULTI-OPTION RULES:
 - Each plan in the array must be a complete, valid plan with its own planId, steps, etc.
 
 DECISION RULES:
-- Use responseType "plans" when the user wants to DO something to their spreadsheet (write data, apply formatting, create charts, sort, filter, etc.)
-- Use responseType "message" for everything else: questions, greetings, explanations, "what can you do?", asking for advice, etc.
+- responseType "plans" = the user asked you to DO something to their spreadsheet. There must be a clear action: "sort column A", "add a chart", "clean up duplicates", "match these columns", etc.
+- responseType "message" = EVERYTHING ELSE. This is the default. Conversations, questions, ideas, consulting, brainstorming, greetings, opinions, "what do you think about...", "how should I structure...", "is it possible to...", explanations, advice — all "message".
+- CRITICAL: You must NEVER invent a task. If the user did not explicitly ask you to change their spreadsheet, respond with "message". The workbook snapshot is context for when the user DOES ask — it is NOT a prompt to act on.
 - For "message" type, set plans to null
-- LANGUAGE: Always reply in the SAME language the user writes in. If the user writes in Hebrew, reply in Hebrew. If in English, reply in English. Match the user's language naturally.
 - Always write a friendly, concise "message"
-- NEVER use responseType "message" to narrate or confirm a planned action (e.g. "I'll do X", "I will check...", "Sure, I'll match..."). If the task is clear, produce the plan IMMEDIATELY. Only use "message" when you genuinely need to ask the user for missing information, or when answering a question.
+
+LANGUAGE RULE (applies to ALL output — messages AND plans):
+- Default language is English. Switch to the user's language when they write in a non-English language.
+- If the user writes in Hebrew → respond in Hebrew. If in English → respond in English. If in Spanish → Spanish. Always match the user's language.
+- If the user explicitly requests a language ("respond in Hebrew", "answer in English"), use that language regardless of what they wrote in.
+- This applies to EVERYTHING you output: the "message" field, plan "summary", step "description" fields, "optionLabel" text, and any other human-readable text.
+- EXCEPTION: action names, param keys, and param values that are code identifiers (like "writeValues", "outputRange", "columnClustered") must stay in English — they are code, not prose. Only human-readable text switches language.
+- When the user gives a clear task, produce the plan IMMEDIATELY — do not narrate ("I'll do X") or ask for unnecessary confirmation. Go straight to the plan.
 - If the user says "yes", "continue", "go ahead", "do it", or similar confirmation after seeing a "message" response — they are approving the action. Produce the plan NOW, do not send another confirmation message.
 
 AVAILABLE EXCEL ACTIONS:
@@ -119,12 +126,63 @@ PLAN RULES:
 
 STEP OUTPUT BINDING (passing data between steps):
 - Steps can reference outputs from earlier steps using {{{{step_N.field}}}} syntax
-- When a step produces an output (e.g. a new sheet name or output range), downstream steps can bind to it
-- Available binding fields depend on the action: outputRange, sheetName, tableName, pivotName, etc.
-- Example: step_1 creates a sheet → step_2 uses "{{{{step_1.sheetName}}}}!A1" as its target range
-- Example: step_1 writes data to an outputRange → step_2 charts "{{{{step_1.outputRange}}}}"
 - The executor resolves bindings before executing each step, so use dependsOn to ensure order
 - Only use bindings when the output value is truly dynamic — if you know the range/name statically, use the literal value
+- IMPORTANT: Only reference fields that the upstream action ACTUALLY produces. Here is the complete catalog:
+
+  Actions that output "outputRange" (string — the range they wrote to):
+    readRange, writeValues, matchRecords, groupSum, copyPasteRange,
+    cleanupText, transpose, unpivot, extractPattern, categorize,
+    crossTabulate, splitColumn, consolidateRanges, joinSheets, topN,
+    frequencyDistribution, rankColumn, runningTotal, percentOfTotal,
+    growthRate, lookupAll, fuzzyMatch, compareSheets, consolidateAllSheets
+
+  Actions that output "range" (string — the range they modified in-place):
+    applyFilter, sortRange, findReplace, removeDuplicates, fillBlanks,
+    normalizeDates, coerceDataType, regexReplace, deleteRowsByCondition,
+    subtotals, formatCells, setNumberFormat, addConditionalFormat, clearRange,
+    mergeCells, autoFitColumns, insertDeleteRows, groupRows, setRowColSize,
+    bulkFormula, conditionalFormula, addValidation, addDropdownControl,
+    quickFormat, alternatingRowFormat, addReportHeader, addSparkline,
+    deduplicateAdvanced
+
+  Actions that output "sheetName" (string):
+    addSheet, renameSheet, copySheet, protectSheet
+
+  Actions that output "tableName" + "tableRange" (strings):
+    createTable
+
+  Actions that output "pivotName" (string):
+    createPivot, refreshPivot, pivotCalculatedField
+
+  Actions that output "chartName" (string):
+    createChart
+
+  Actions that output "cell" (string — the single cell they wrote to):
+    writeFormula, spillFormula
+
+  Actions that output "name" + "range" (string):
+    namedRange (create/update only)
+
+  Other numeric outputs (can also be referenced):
+    readRange → rowCount, columnCount
+    writeValues → rowsWritten
+    groupSum → groupCount
+    findReplace → replacementCount
+    removeDuplicates → removedCount
+    fillBlanks → filledCount
+    regexReplace → replacementCount
+    deleteRowsByCondition → deletedCount
+    splitByGroup → sheetCount
+
+  Actions with NO bindable outputs (use static values instead):
+    freezePanes, hideShow, pageLayout, insertPicture, insertShape,
+    insertTextBox, addComment, addHyperlink, deleteSheet
+
+- Example: step_1 (addSheet) creates a sheet → step_2 uses "{{{{step_1.sheetName}}}}!A1" as its target range
+- Example: step_1 (writeValues) writes data → step_2 (createChart) uses "{{{{step_1.outputRange}}}}" as dataRange
+- Example: step_1 (readRange) reads data → step_2 (applyFilter) uses "{{{{step_1.outputRange}}}}" as range
+- CRITICAL: If a step uses {{{{step_N.field}}}}, it MUST include "dependsOn": ["step_N"]
 
 MULTI-STEP PLANS:
 - Use as many steps as the task genuinely requires — do not artificially limit to one step
@@ -374,6 +432,11 @@ def _build_user_content(request: ChatRequest) -> str:
         date_fmt = "dd/mm/yyyy"
     parts.append(f"User date format: {date_fmt} — ALWAYS use this format consistently for ALL dates in your response")
 
+    # Pass locale as a language hint (the user's message language takes priority,
+    # but locale helps when the message is ambiguous, e.g. just numbers or ranges)
+    if locale:
+        parts.append(f"User locale: {locale}")
+
     # If the frontend reported the used range, tell the LLM where free space starts
     if getattr(request, "usedRangeEnd", None):
         parts.append(f"\nSheet used range ends at: {request.usedRangeEnd} — place new data below or beside it")
@@ -507,7 +570,7 @@ RULES:
 - "action" must be EXACTLY one of the listed actions above — copy verbatim, never invent or paraphrase
 - If no single action fits, compose the task from multiple steps using actions from the list
 - "params" must contain the action's parameters
-- Reply in the SAME language as the user
+- Reply in the SAME language as the user (default English). All human-readable text (message, summary, step descriptions, option labels) must be in the user's language
 - Extract ranges from [[...]] tokens — use the address inside, not the brackets
 - NO prose, NO markdown — ONLY the JSON object"""
 
@@ -522,6 +585,72 @@ RULES:
 
 _VALID_ACTION_NAMES: frozenset[str] = frozenset(a.value for a in StepAction)
 _BINDING_TOKEN_RE = re.compile(r"\{\{(step_\w+)\.(\w+)\}\}")
+
+# Map each action to the output field names its handler produces.
+# Used for field-level binding validation — if a downstream step references
+# {{step_1.outputRange}} and step_1 is "createChart", we can flag that
+# createChart produces "chartName", not "outputRange".
+_ACTION_OUTPUTS: dict[str, frozenset[str]] = {
+    # outputRange producers
+    **{a: frozenset({"outputRange"}) for a in (
+        "readRange", "matchRecords", "copyPasteRange",
+        "cleanupText", "transpose", "unpivot", "extractPattern",
+        "categorize", "crossTabulate", "splitColumn", "consolidateRanges",
+        "joinSheets", "topN", "frequencyDistribution", "rankColumn",
+        "runningTotal", "percentOfTotal", "growthRate", "lookupAll",
+        "fuzzyMatch", "compareSheets", "consolidateAllSheets",
+    )},
+    # readRange also has rowCount, columnCount
+    "readRange": frozenset({"outputRange", "rowCount", "columnCount"}),
+    # writeValues has outputRange + rowsWritten
+    "writeValues": frozenset({"outputRange", "rowsWritten"}),
+    # groupSum has outputRange + groupCount
+    "groupSum": frozenset({"outputRange", "groupCount"}),
+    # range producers (in-place modifications)
+    **{a: frozenset({"range"}) for a in (
+        "applyFilter", "sortRange", "formatCells", "setNumberFormat",
+        "addConditionalFormat", "clearRange", "mergeCells", "autoFitColumns",
+        "insertDeleteRows", "groupRows", "setRowColSize", "bulkFormula",
+        "conditionalFormula", "addDropdownControl",
+        "quickFormat", "alternatingRowFormat", "addReportHeader",
+        "addSparkline", "subtotals", "deduplicateAdvanced",
+        "normalizeDates", "coerceDataType", "addValidation",
+    )},
+    # findReplace, removeDuplicates, fillBlanks, regexReplace, deleteRowsByCondition
+    # have range + a count field
+    "findReplace": frozenset({"range", "replacementCount"}),
+    "removeDuplicates": frozenset({"range", "removedCount"}),
+    "fillBlanks": frozenset({"range", "filledCount"}),
+    "regexReplace": frozenset({"range", "replacementCount"}),
+    "deleteRowsByCondition": frozenset({"range", "deletedCount"}),
+    # Sheet ops
+    "addSheet": frozenset({"sheetName"}),
+    "renameSheet": frozenset({"sheetName"}),
+    "copySheet": frozenset({"sheetName"}),
+    "protectSheet": frozenset({"sheetName"}),
+    # Table / pivot / chart
+    "createTable": frozenset({"tableName", "tableRange"}),
+    "createPivot": frozenset({"pivotName"}),
+    "refreshPivot": frozenset({"pivotName"}),
+    "pivotCalculatedField": frozenset({"pivotName", "fieldName"}),
+    "createChart": frozenset({"chartName"}),
+    # Single-cell writers
+    "writeFormula": frozenset({"cell"}),
+    "spillFormula": frozenset({"cell"}),
+    # namedRange
+    "namedRange": frozenset({"name", "range"}),
+    # splitByGroup
+    "splitByGroup": frozenset({"sheetCount"}),
+    # addSlicer
+    "addSlicer": frozenset({"slicerName"}),
+    # No outputs
+    **{a: frozenset() for a in (
+        "freezePanes", "hideShow", "pageLayout", "insertPicture",
+        "insertShape", "insertTextBox", "addComment", "addHyperlink",
+        "cloneSheetStructure",
+        "deleteSheet",
+    )},
+}
 
 
 def _validate_step_actions(plan_data: dict) -> None:
@@ -559,11 +688,12 @@ def _validate_step_actions(plan_data: dict) -> None:
         )
 
     # Validate {{step_N.field}} bindings reference real, earlier steps
-    step_ids: set[str] = set()
+    # and that the referenced field is actually produced by that step's action.
+    step_map: dict[str, dict] = {}
     for s in steps:
         if isinstance(s, dict) and isinstance(s.get("id"), str):
-            step_ids.add(s["id"])
-    if not step_ids:
+            step_map[s["id"]] = s
+    if not step_map:
         return
 
     binding_errors: list[str] = []
@@ -579,25 +709,51 @@ def _validate_step_actions(plan_data: dict) -> None:
             continue
         if "{{step_" not in params_json:
             continue
+
+        current_id = s.get("id", "?")
+        # Also verify that any step referenced via binding is in dependsOn
+        declared_deps = set(s.get("dependsOn") or [])
         seen: set[str] = set()
+
         for m in _BINDING_TOKEN_RE.finditer(params_json):
-            ref = m.group(1)
-            if ref in seen:
+            ref_step = m.group(1)
+            ref_field = m.group(2)
+            token = m.group(0)
+            if ref_step in seen:
                 continue
-            seen.add(ref)
-            if ref not in step_ids:
+            seen.add(ref_step)
+
+            if ref_step not in step_map:
                 binding_errors.append(
-                    f"step '{s.get('id', '?')}' references {m.group(0)} but no step '{ref}' exists"
+                    f"step '{current_id}' references {token} but no step '{ref_step}' exists"
                 )
-            elif ref == s.get("id"):
+            elif ref_step == current_id:
                 binding_errors.append(
-                    f"step '{s.get('id', '?')}' references {m.group(0)} (self-reference)"
+                    f"step '{current_id}' references {token} (self-reference)"
                 )
+            else:
+                # Field-level validation: does the upstream action produce this field?
+                upstream = step_map[ref_step]
+                upstream_action = upstream.get("action", "")
+                known_fields = _ACTION_OUTPUTS.get(upstream_action)
+                if known_fields is not None and ref_field not in known_fields:
+                    available = ", ".join(sorted(known_fields)) if known_fields else "none"
+                    binding_errors.append(
+                        f"step '{current_id}' references {token} but '{upstream_action}' "
+                        f"produces: [{available}]"
+                    )
+                # Warn (but don't error) if binding target not in dependsOn — auto-fix it
+                if ref_step not in declared_deps:
+                    deps = s.setdefault("dependsOn", [])
+                    if isinstance(deps, list) and ref_step not in deps:
+                        deps.append(ref_step)
+
     if binding_errors:
         raise ValueError(
             "Invalid step binding(s): "
             + "; ".join(binding_errors[:3])
-            + ". Bindings like {{step_N.field}} must reference an EARLIER step that exists in the plan."
+            + ". Bindings like {{step_N.field}} must reference an EARLIER step that exists in the plan,"
+            + " and the field must be one the upstream action actually produces."
         )
 
 

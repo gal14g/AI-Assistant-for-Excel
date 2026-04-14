@@ -50,6 +50,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Sorted ${address} by ${sortFields.length} field(s)`,
+    outputs: { range: address },
   };
 }
 

@@ -45,6 +45,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Merged cells in ${params.range} (${modeLabel})`,
+    outputs: { range: params.range },
   };
 }
 

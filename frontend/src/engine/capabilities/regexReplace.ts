@@ -77,6 +77,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Replaced ${replacedCells} cells across ${vals.length} rows`,
+    outputs: { range: address, replacementCount: replacedCells },
   };
 }
 

@@ -95,6 +95,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Added report header "${title}" to ${sheetLabel}`,
+    outputs: { range: range ?? "A1" },
   };
 }
 

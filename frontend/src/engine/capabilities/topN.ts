@@ -73,6 +73,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `${label} ${taken.length} rows by column ${valueColumn} written to ${outputRange}`,
+    outputs: { outputRange },
   };
 }
 

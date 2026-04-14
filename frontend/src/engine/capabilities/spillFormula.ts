@@ -92,6 +92,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Wrote dynamic array formula to ${cell}, ${spillInfo}`,
+    outputs: { cell: cellAddress },
   };
 }
 

@@ -67,6 +67,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Applied alternating row colors to ${dataRows} rows`,
+    outputs: { range: address },
   };
 }
 

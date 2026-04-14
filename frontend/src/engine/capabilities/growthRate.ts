@@ -92,6 +92,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Created ${rowCount} growth rate formulas in ${outputRange}`,
+    outputs: { outputRange },
   };
 }
 

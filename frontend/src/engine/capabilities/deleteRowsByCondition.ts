@@ -77,6 +77,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Deleted ${matchingRows.length} rows where column ${column} ${condDesc}`,
+    outputs: { range: address, deletedCount: matchingRows.length },
   };
 }
 

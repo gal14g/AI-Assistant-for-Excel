@@ -113,6 +113,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Found ${entries.length} unique values across ${totalCount} total entries`,
+    outputs: { outputRange },
   };
 }
 

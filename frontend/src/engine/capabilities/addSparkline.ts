@@ -71,6 +71,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Added ${sparklineType} sparklines to ${locationRange} from ${dataRange}`,
+    outputs: { range: locationRange },
   };
 }
 

@@ -72,6 +72,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Unpivoted ${data.length - 1} rows into ${outRows.length - 1} rows (${valueHeaders.length} value columns → rows)`,
+    outputs: { outputRange },
   };
 }
 

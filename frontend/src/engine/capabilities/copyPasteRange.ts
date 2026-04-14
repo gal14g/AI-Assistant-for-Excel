@@ -45,6 +45,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Copied ${params.sourceRange} → ${params.destinationRange} (${params.pasteType ?? "all"})`,
+    outputs: { outputRange: params.destinationRange },
   };
 }
 

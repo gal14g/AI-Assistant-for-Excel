@@ -150,6 +150,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Normalized ${normalized}/${total} dates to "${outputFormat}"`,
+    outputs: { range },
   };
 }
 

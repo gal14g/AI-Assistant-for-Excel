@@ -53,6 +53,7 @@ async function handler(
       stepId: "",
       status: "success",
       message: `Added calculated field "${fieldName}" to pivot "${pivotName}"`,
+      outputs: { pivotName, fieldName },
     };
   } catch (err: any) {
     const message = err?.message ?? String(err);

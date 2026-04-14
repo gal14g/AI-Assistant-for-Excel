@@ -66,6 +66,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Added slicer for "${sourceField}" on "${sourceName}"${sheetName ? ` on sheet "${sheetName}"` : ""}`,
+    outputs: { slicerName: sourceField },
   };
 }
 

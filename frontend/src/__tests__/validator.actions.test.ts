@@ -185,6 +185,60 @@ describe("validatePlan — invalid binding references", () => {
       (e) => e.code === "INVALID_BINDING" && e.message.includes("self-reference"),
     )).toBe(true);
   });
+
+  it("rejects bindings to a field the upstream action does not produce", () => {
+    // createChart produces "chartName", NOT "outputRange"
+    const plan = makePlan([
+      makeStep({
+        id: "step_1", action: "createChart",
+        params: { dataRange: "A1:B10", chartType: "line" } as never,
+      }),
+      makeStep({
+        id: "step_2", action: "writeValues",
+        params: { range: "{{step_1.outputRange}}", values: [["x"]] } as never,
+        dependsOn: ["step_1"],
+      }),
+    ]);
+    const result = validatePlan(plan);
+    expect(result.valid).toBe(false);
+    const fieldErr = result.errors.find((e) => e.code === "INVALID_BINDING_FIELD");
+    expect(fieldErr).toBeDefined();
+    expect(fieldErr!.message).toContain("chartName");
+  });
+
+  it("accepts bindings to a field the upstream action does produce", () => {
+    // readRange produces "outputRange" — valid binding
+    const plan = makePlan([
+      makeStep({
+        id: "step_1", action: "readRange",
+        params: { range: "A1:B10" } as never,
+      }),
+      makeStep({
+        id: "step_2", action: "createChart",
+        params: { dataRange: "{{step_1.outputRange}}", chartType: "line" } as never,
+        dependsOn: ["step_1"],
+      }),
+    ]);
+    const result = validatePlan(plan);
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects bindings to no-output actions like freezePanes", () => {
+    const plan = makePlan([
+      makeStep({
+        id: "step_1", action: "freezePanes",
+        params: { range: "A2" } as never,
+      }),
+      makeStep({
+        id: "step_2", action: "writeValues",
+        params: { range: "{{step_1.range}}", values: [["x"]] } as never,
+        dependsOn: ["step_1"],
+      }),
+    ]);
+    const result = validatePlan(plan);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.code === "INVALID_BINDING_FIELD")).toBe(true);
+  });
 });
 
 describe("validatePlan — Hebrew sheet names in plans", () => {

@@ -53,6 +53,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Removed ${result.removed} duplicate rows; ${result.uniqueRemaining} unique rows remain`,
+    outputs: { range: address, removedCount: result.removed },
   };
 }
 

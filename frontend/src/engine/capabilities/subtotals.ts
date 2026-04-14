@@ -105,6 +105,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Added ${subtotalCount} subtotal rows to ${dataRange}`,
+    outputs: { range: dataRange },
   };
 }
 

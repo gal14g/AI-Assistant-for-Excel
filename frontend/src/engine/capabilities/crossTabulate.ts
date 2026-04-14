@@ -115,6 +115,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Cross-tab: ${rowKeys.length} rows × ${colKeys.length} columns (${aggregation}) written to ${outputRange}`,
+    outputs: { outputRange },
   };
 }
 

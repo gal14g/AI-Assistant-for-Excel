@@ -45,6 +45,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Cleared ${params.clearType} from ${params.range}`,
+    outputs: { range: params.range },
   };
 }
 

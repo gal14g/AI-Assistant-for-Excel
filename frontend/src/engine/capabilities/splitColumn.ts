@@ -101,6 +101,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Split ${vals.length} rows from ${sourceRange} into ${parts} columns starting at ${outputStartColumn}`,
+    outputs: { outputRange: outAddr },
   };
 }
 

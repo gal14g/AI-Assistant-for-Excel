@@ -52,6 +52,7 @@ async function handler(
       stepId: "",
       status: "success",
       message: `Refreshed pivot table "${pivotName}"`,
+      outputs: { pivotName },
     };
   }
 
@@ -75,6 +76,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Refreshed ${pivots.items.length} pivot table(s)`,
+    outputs: { pivotName: pivots.items.map(p => p.name).join(", ") },
   };
 }
 

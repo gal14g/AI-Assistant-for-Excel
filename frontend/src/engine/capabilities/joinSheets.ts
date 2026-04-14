@@ -126,6 +126,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Joined ${leftData.length - 1} left rows with ${rightData.length - 1} right rows → ${resultRows.length - 1} result rows (${joinType})`,
+    outputs: { outputRange },
   };
 }
 

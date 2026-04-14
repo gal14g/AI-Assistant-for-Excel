@@ -93,6 +93,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Created ${chartType} chart${title ? ` "${title}"` : ""} from ${dataRange}`,
+    outputs: { chartName: title ?? `${chartType} chart` },
   };
 }
 

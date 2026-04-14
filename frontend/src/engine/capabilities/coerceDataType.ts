@@ -95,6 +95,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Converted ${converted}/${total} cells to ${targetType}`,
+    outputs: { range },
   };
 }
 

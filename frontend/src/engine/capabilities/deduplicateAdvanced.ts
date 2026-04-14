@@ -140,6 +140,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Removed ${removed} duplicate rows, kept ${keptRows.length} unique rows (strategy: ${keepStrategy})`,
+    outputs: { range },
   };
 }
 

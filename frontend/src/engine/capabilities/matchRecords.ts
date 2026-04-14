@@ -141,6 +141,7 @@ async function formulaMatch(
       stepId: "",
       status: "success",
       message: `Created ${rowCount} VLOOKUP formulas in ${outputAddr}`,
+      outputs: { outputRange: params.outputRange },
     };
   }
 
@@ -168,6 +169,7 @@ async function formulaMatch(
         stepId: "",
         status: "success",
         message: `Created ${rowCount} VLOOKUP formulas in ${outputAddr} (XLOOKUP not supported on this Excel version — automatically used VLOOKUP instead)`,
+        outputs: { outputRange: params.outputRange },
       };
     }
   }
@@ -177,6 +179,7 @@ async function formulaMatch(
     stepId: "",
     status: "success",
     message: `Created ${rowCount} XLOOKUP formulas in ${outputAddr}`,
+    outputs: { outputRange: params.outputRange },
   };
 }
 
@@ -263,6 +266,7 @@ async function computedMatch(
     stepId: "",
     status: "success",
     message: `Matched ${matched}/${lookupValues.length} records, wrote to ${preciseOutputAddr}`,
+    outputs: { outputRange: params.outputRange },
   };
 }
 
@@ -454,6 +458,7 @@ async function compositeKeyMatch(
     stepId: "",
     status: "success",
     message: `Composite match: ${matchCount}/${filledLookup.length} rows matched — wrote "${writeValue}" to ${outSheetName ?? "active sheet"} column ${outCol}${skippedCount > 0 ? ` (${skippedCount} skipped — merged/protected)` : ""}`,
+    outputs: { outputRange: params.outputRange },
   };
 }
 

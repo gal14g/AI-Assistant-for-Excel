@@ -41,6 +41,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Set ${params.dimension} to ${params.size} on ${params.range}`,
+    outputs: { range: params.range },
   };
 }
 

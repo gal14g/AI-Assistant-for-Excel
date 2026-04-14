@@ -88,6 +88,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Created ${rowCount} percent-of-total formulas in ${outputRange}`,
+    outputs: { outputRange },
   };
 }
 

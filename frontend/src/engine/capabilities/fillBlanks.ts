@@ -74,6 +74,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Filled ${filled} blank cell(s) in ${range} (mode: ${fillMode})`,
+    outputs: { range, filledCount: filled },
   };
 }
 

@@ -52,6 +52,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Transposed ${rows}×${cols} → ${cols}×${rows} written to ${outputRange}`,
+    outputs: { outputRange },
   };
 }
 

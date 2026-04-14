@@ -82,6 +82,7 @@ for (const sa of sheetActions) {
           stepId: "",
           status: "success",
           message: `Renamed sheet to "${params.newName}"`,
+          outputs: { sheetName: params.newName ?? params.sheetName },
         };
       }
 
@@ -117,6 +118,7 @@ for (const sa of sheetActions) {
           stepId: "",
           status: "success",
           message: `Copied sheet "${params.sheetName}" as "${copy.name}"`,
+          outputs: { sheetName: copy.name },
         };
       }
 
@@ -132,6 +134,7 @@ for (const sa of sheetActions) {
           stepId: "",
           status: "success",
           message: `Protected sheet "${params.sheetName}"`,
+          outputs: { sheetName: params.sheetName },
         };
       }
 

@@ -88,6 +88,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Wrote "${formula}" (adjusted) to ${rowCount} rows in column ${outCol}`,
+    outputs: { range: `${outCol}${firstDataRow}:${outCol}${lastRow}` },
   };
 }
 

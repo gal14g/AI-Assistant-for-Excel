@@ -86,6 +86,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Created ${rowCount} rank formulas in ${outputRange}`,
+    outputs: { outputRange },
   };
 }
 

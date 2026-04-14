@@ -65,6 +65,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Extracted ${found} match(es) using pattern "${pattern}" from ${vals.length} rows`,
+    outputs: { outputRange },
   };
 }
 

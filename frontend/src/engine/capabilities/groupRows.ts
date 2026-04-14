@@ -51,6 +51,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `${verb}ed ${params.range}`,
+    outputs: { range: params.range },
   };
 }
 

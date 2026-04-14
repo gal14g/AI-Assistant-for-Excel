@@ -82,6 +82,7 @@ async function handler(
       stepId: "",
       status: "success",
       message: `Consolidated ${tables.length} ranges → ${combined.length} rows in ${outputRange}${deduplicate ? " (deduped)" : ""}`,
+      outputs: { outputRange },
     };
   } else {
     // horizontal: join side by side
@@ -102,6 +103,7 @@ async function handler(
       stepId: "",
       status: "success",
       message: `Horizontally joined ${tables.length} ranges → ${combined.length} rows × ${combined[0].length} columns`,
+      outputs: { outputRange },
     };
   }
 }

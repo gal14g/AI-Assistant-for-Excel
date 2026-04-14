@@ -11,8 +11,94 @@
  * MUST NOT be executed. Warnings are informational.
  */
 
-import { ExecutionPlan, PlanStep } from "./types";
+import { ExecutionPlan, PlanStep, StepAction } from "./types";
 import { registry } from "./capabilityRegistry";
+
+/**
+ * Map each action to the output field names its handler produces.
+ * Used for field-level binding validation — if a downstream step references
+ * {{step_1.outputRange}} and step_1 is "createChart", we flag it because
+ * createChart produces "chartName", not "outputRange".
+ */
+const ACTION_OUTPUTS: Partial<Record<StepAction, ReadonlySet<string>>> = {
+  readRange: new Set(["outputRange", "rowCount", "columnCount"]),
+  writeValues: new Set(["outputRange", "rowsWritten"]),
+  matchRecords: new Set(["outputRange"]),
+  groupSum: new Set(["outputRange", "groupCount"]),
+  copyPasteRange: new Set(["outputRange"]),
+  cleanupText: new Set(["outputRange"]),
+  transpose: new Set(["outputRange"]),
+  unpivot: new Set(["outputRange"]),
+  extractPattern: new Set(["outputRange"]),
+  categorize: new Set(["outputRange"]),
+  crossTabulate: new Set(["outputRange"]),
+  splitColumn: new Set(["outputRange"]),
+  consolidateRanges: new Set(["outputRange"]),
+  joinSheets: new Set(["outputRange"]),
+  topN: new Set(["outputRange"]),
+  frequencyDistribution: new Set(["outputRange"]),
+  rankColumn: new Set(["outputRange"]),
+  runningTotal: new Set(["outputRange"]),
+  percentOfTotal: new Set(["outputRange"]),
+  growthRate: new Set(["outputRange"]),
+  lookupAll: new Set(["outputRange"]),
+  fuzzyMatch: new Set(["outputRange"]),
+  compareSheets: new Set(["outputRange"]),
+  consolidateAllSheets: new Set(["outputRange"]),
+  applyFilter: new Set(["range"]),
+  sortRange: new Set(["range"]),
+  findReplace: new Set(["range", "replacementCount"]),
+  removeDuplicates: new Set(["range", "removedCount"]),
+  fillBlanks: new Set(["range", "filledCount"]),
+  normalizeDates: new Set(["range"]),
+  coerceDataType: new Set(["range"]),
+  regexReplace: new Set(["range", "replacementCount"]),
+  deleteRowsByCondition: new Set(["range", "deletedCount"]),
+  subtotals: new Set(["range"]),
+  formatCells: new Set(["range"]),
+  setNumberFormat: new Set(["range"]),
+  addConditionalFormat: new Set(["range"]),
+  clearRange: new Set(["range"]),
+  mergeCells: new Set(["range"]),
+  autoFitColumns: new Set(["range"]),
+  insertDeleteRows: new Set(["range"]),
+  groupRows: new Set(["range"]),
+  setRowColSize: new Set(["range"]),
+  bulkFormula: new Set(["range"]),
+  conditionalFormula: new Set(["range"]),
+  addValidation: new Set(["range"]),
+  addDropdownControl: new Set(["range"]),
+  quickFormat: new Set(["range"]),
+  alternatingRowFormat: new Set(["range"]),
+  addReportHeader: new Set(["range"]),
+  addSparkline: new Set(["range"]),
+  deduplicateAdvanced: new Set(["range"]),
+  addSheet: new Set(["sheetName"]),
+  renameSheet: new Set(["sheetName"]),
+  copySheet: new Set(["sheetName"]),
+  protectSheet: new Set(["sheetName"]),
+  createTable: new Set(["tableName", "tableRange"]),
+  createPivot: new Set(["pivotName"]),
+  refreshPivot: new Set(["pivotName"]),
+  pivotCalculatedField: new Set(["pivotName", "fieldName"]),
+  createChart: new Set(["chartName"]),
+  writeFormula: new Set(["cell"]),
+  spillFormula: new Set(["cell"]),
+  namedRange: new Set(["name", "range"]),
+  splitByGroup: new Set(["sheetCount"]),
+  addSlicer: new Set(["slicerName"]),
+  cloneSheetStructure: new Set(),
+  // No outputs
+  freezePanes: new Set(),
+  hideShow: new Set(),
+  pageLayout: new Set(),
+  insertPicture: new Set(),
+  insertShape: new Set(),
+  insertTextBox: new Set(),
+  addComment: new Set(),
+  addHyperlink: new Set(),
+  deleteSheet: new Set(),
+};
 
 export interface ValidationResult {
   valid: boolean;
@@ -83,7 +169,7 @@ const BINDING_TOKEN_RE = /\{\{(step_\w+)\.(\w+)\}\}/g;
  * fails with an unactionable Office.js error.
  */
 function validateBindings(steps: PlanStep[], errors: ValidationIssue[]): void {
-  const stepIds = new Set(steps.map((s) => s.id));
+  const stepMap = new Map(steps.map((s) => [s.id, s]));
   for (const step of steps) {
     if (!step.params) continue;
     let json: string;
@@ -96,20 +182,37 @@ function validateBindings(steps: PlanStep[], errors: ValidationIssue[]): void {
     const seen = new Set<string>();
     for (const m of json.matchAll(BINDING_TOKEN_RE)) {
       const refStepId = m[1];
-      if (seen.has(refStepId)) continue;
-      seen.add(refStepId);
-      if (!stepIds.has(refStepId)) {
+      const refField = m[2];
+      const token = m[0];
+      if (seen.has(refStepId + "." + refField)) continue;
+      seen.add(refStepId + "." + refField);
+
+      if (!stepMap.has(refStepId)) {
         errors.push({
           stepId: step.id,
-          message: `Param contains binding "${m[0]}" but step "${refStepId}" is not defined in the plan`,
+          message: `Param contains binding "${token}" but step "${refStepId}" is not defined in the plan`,
           code: "INVALID_BINDING",
         });
       } else if (refStepId === step.id) {
         errors.push({
           stepId: step.id,
-          message: `Param contains binding "${m[0]}" referencing this same step (self-reference)`,
+          message: `Param contains binding "${token}" referencing this same step (self-reference)`,
           code: "INVALID_BINDING",
         });
+      } else {
+        // Field-level validation: does the upstream action produce this field?
+        const upstream = stepMap.get(refStepId)!;
+        const knownFields = ACTION_OUTPUTS[upstream.action];
+        if (knownFields !== undefined && !knownFields.has(refField)) {
+          const available = knownFields.size > 0
+            ? Array.from(knownFields).join(", ")
+            : "none";
+          errors.push({
+            stepId: step.id,
+            message: `Binding "${token}": action "${upstream.action}" produces [${available}], not "${refField}"`,
+            code: "INVALID_BINDING_FIELD",
+          });
+        }
       }
     }
   }

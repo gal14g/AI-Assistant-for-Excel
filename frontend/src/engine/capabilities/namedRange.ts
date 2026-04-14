@@ -72,6 +72,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `${operation === "create" ? "Created" : "Updated"} named range "${name}" → ${absAddr}`,
+    outputs: { name, range: absAddr },
   };
 }
 

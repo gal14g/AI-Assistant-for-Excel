@@ -117,6 +117,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Combined ${sheetCount} sheets (${combined.length} total rows) into "${outputSheetName}"`,
+    outputs: { outputRange: `${outputSheetName}!A1` },
   };
 }
 

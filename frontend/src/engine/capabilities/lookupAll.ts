@@ -103,6 +103,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Found matches for ${matchedLookups}/${lookupVals.length} lookup values (${totalMatches} total matches)`,
+    outputs: { outputRange },
   };
 }
 

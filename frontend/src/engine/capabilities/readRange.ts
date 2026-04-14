@@ -39,6 +39,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Read ${rowCount}x${colCount} from ${range.address}`,
+    outputs: { outputRange: range.address, rowCount, columnCount: colCount },
     data: {
       values,
       address: range.address,

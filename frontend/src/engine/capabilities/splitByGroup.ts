@@ -86,6 +86,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Split into ${groups.size} sheets by column ${groupByColumn}`,
+    outputs: { sheetCount: groups.size },
   };
 }
 

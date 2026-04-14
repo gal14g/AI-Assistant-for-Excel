@@ -78,6 +78,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Applied [${operations.join(", ")}] to ${values.length} rows in ${targetAddress}`,
+    outputs: { outputRange: targetAddress },
   };
 }
 

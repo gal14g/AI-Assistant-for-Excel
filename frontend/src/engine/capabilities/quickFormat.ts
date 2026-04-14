@@ -103,6 +103,7 @@ async function handler(
     stepId: "",
     status: "success",
     message: `Applied quick format (${applied.join(", ")})`,
+    outputs: { range: address },
   };
 }
 
