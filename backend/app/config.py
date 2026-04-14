@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # ── Embedding / Capability Search ────────────────────────────────────────
     embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
     chroma_persist_dir: str = ""          # auto-resolved to backend/data/chroma if empty
-    capability_top_k: int = 25
+    capability_top_k: int = 30
 
     # ── Few-shot examples ────────────────────────────────────────────────────
     few_shot_top_k: int = 5               # how many dynamic examples to retrieve per query

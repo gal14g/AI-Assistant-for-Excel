@@ -689,35 +689,15 @@ def is_ready() -> bool:
     return _ready
 
 
-# Core actions that should ALWAYS be available to the LLM regardless of
-# semantic search results.  These cover the fundamental operations that
-# any moderately complex request might need.  Without them, the LLM says
-# "I can't do that" even though the capability exists.
-_CORE_ACTIONS: frozenset[str] = frozenset({
-    "readRange", "writeValues", "writeFormula", "matchRecords",
-    "groupSum", "createTable", "applyFilter", "sortRange",
-    "createPivot", "createChart", "addConditionalFormat",
-    "formatCells", "clearRange", "findReplace", "removeDuplicates",
-    "addSheet", "renameSheet", "deleteSheet", "copySheet",
-    "autoFitColumns", "setNumberFormat", "freezePanes",
-    "addValidation", "copyPasteRange", "insertDeleteRows",
-    "protectSheet", "hideShow", "mergeCells",
-})
-
-
 @functools.lru_cache(maxsize=256)
 def search_capabilities(query: str, top_k: int | None = None) -> list[str]:
     """
-    Return the action names of the most relevant capabilities for the
-    given user query.
+    Return the action names of the top-K most relevant capabilities
+    for the given user query.
 
-    Always includes the ~28 core actions (chart, filter, format, sheet ops,
-    etc.) so the LLM never says "I can't" for fundamental operations.
-    Semantic search is used to boost specialty actions (fuzzyMatch,
-    crossTabulate, etc.) into the list when the query is relevant.
-
-    The embedding model (all-MiniLM-L6-v2) is English-only, so non-English
-    queries would miss most actions without the core set guarantee.
+    Uses paraphrase-multilingual-MiniLM-L12-v2 which supports 50+
+    languages including Hebrew, so queries in any language match
+    correctly against the capability examples.
     """
     if not _ready or _collection is None:
         # Fallback: return all actions (no filtering)
@@ -741,12 +721,4 @@ def search_capabilities(query: str, top_k: int | None = None) -> list[str]:
             if action not in seen:
                 seen[action] = None
 
-    # Merge: semantic results first, then core actions, then cap
-    merged: dict[str, None] = {}
-    for action in seen:
-        merged[action] = None
-    for action in _CORE_ACTIONS:
-        if action not in merged:
-            merged[action] = None
-
-    return list(merged.keys())
+    return list(seen.keys())[:k]
