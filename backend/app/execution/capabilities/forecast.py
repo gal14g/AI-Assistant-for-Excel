@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Any
 
 from app.execution.base import ExecutorContext
@@ -83,7 +83,6 @@ def handler(ctx: ExecutorContext, params: dict[str, Any]) -> dict[str, Any]:
 
     # Compose output.
     out = resolve_range(ctx.workbook_handle, output_range)
-    out_top = out[0, 0]
     out_sheet = out.sheet
     out_addr_tail = out.address.split("!")[-1].split(":")[0]
     om = re.match(r"^\$?([A-Z]+)\$?(\d+)$", out_addr_tail)

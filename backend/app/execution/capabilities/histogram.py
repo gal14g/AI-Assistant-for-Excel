@@ -87,7 +87,6 @@ def handler(ctx: ExecutorContext, params: dict[str, Any]) -> dict[str, Any]:
         return {"status": "preview", "message": f"Would build histogram with {len(bin_edges)} bins."}
 
     out = resolve_range(ctx.workbook_handle, output_range)
-    out_top = out[0, 0]
     out_sheet = out.sheet
     out_addr_tail = out.address.split("!")[-1].split(":")[0]
     m = re.match(r"^\$?([A-Z]+)\$?(\d+)$", out_addr_tail)
