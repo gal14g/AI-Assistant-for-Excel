@@ -59,15 +59,44 @@ async function handler(
   // steps. The clip is sheet-local, so multi-sheet formulas get each
   // reference bounded against its own sheet's used range.
   const clip = await clipFullColumnRefs(context, formula, sheetName ?? null);
-  const formulaToWrite = clip.formula;
+  let formulaToWrite = clip.formula;
+
+  // Strip workbook-qualifier prefixes (`[File.xlsx]`) — same defensive fix
+  // as in writeFormula. The LLM sometimes leaks these from `[[…]]` range
+  // tokens into the formula body, producing the opaque Office.js error
+  // "The argument is invalid or missing or has an incorrect format".
+  const WB_QUALIFIER_RE = /\[[^\]]*\](?=(?:'[^']+'|[A-Za-z0-9_\u0590-\u05FF]+)!)/g;
+  const beforeStrip = formulaToWrite;
+  formulaToWrite = formulaToWrite.replace(WB_QUALIFIER_RE, "");
+  const strippedQualifier = formulaToWrite !== beforeStrip;
 
   // Resolve target cell — prepend sheetName if provided
   const cellAddress = sheetName && !cell.includes("!") ? `${sheetName}!${cell}` : cell;
   const range = resolveRange(context, cellAddress);
 
-  // Write the (possibly clipped) formula to the single cell
-  range.formulas = [[formulaToWrite]];
-  await context.sync();
+  // Log the final formula for diagnostic audit — Office.js errors don't
+  // include the formula they rejected, so we capture it here.
+  const formulaPreview = formulaToWrite.length > 200 ? formulaToWrite.slice(0, 200) + "…" : formulaToWrite;
+  options.onProgress?.(`Writing to ${cellAddress}: ${formulaPreview}`);
+
+  try {
+    range.formulas = [[formulaToWrite]];
+    await context.sync();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      stepId: "",
+      status: "error",
+      message:
+        `Failed to write spill formula to ${cellAddress}: ${msg}. ` +
+        `Formula that was rejected: ${formulaToWrite}. ` +
+        `Common causes: workbook-qualifier prefix, unbalanced parens, or a ` +
+        `reference to a non-existent sheet.`,
+      error: msg,
+    };
+  }
+
+  void strippedQualifier; // reserved for an audit-log hook if needed later
 
   // Check for formula errors
   range.load("values");

@@ -77,21 +77,64 @@ async function handler(
     }
   }
 
+  // ── Defensive: strip workbook-qualifier prefixes from formula references ──
+  // The LLM sometimes leaks `[File.xlsx]Sheet!A1` patterns (from the [[…]]
+  // range tokens in the user prompt) into the formula body. The `[…]`
+  // qualifier is only valid for cross-workbook linked references — and only
+  // if the *other* workbook is in Excel's registered links table. In every
+  // other case it causes the classic "The argument is invalid or missing or
+  // has an incorrect format" error at write time.
+  //
+  // We strip `[AnythingUpTo.]` and `[Anything]` prefixes before a sheet
+  // qualifier (the `!`) — these are always safe to drop for formulas that
+  // refer to the current workbook.
+  let qualifierNote = "";
+  try {
+    const before = formula;
+    // Match `[...]Sheet!` or `[...]'Quoted Sheet'!` and drop the `[...]`.
+    const WB_QUALIFIER_RE = /\[[^\]]*\](?=(?:'[^']+'|[A-Za-z0-9_\u0590-\u05FF]+)!)/g;
+    formula = formula.replace(WB_QUALIFIER_RE, "");
+    if (formula !== before) {
+      qualifierNote = " (stripped workbook-qualifier prefix(es) from formula references)";
+      options.onProgress?.(qualifierNote.trim());
+    }
+  } catch {
+    // Non-fatal — formula goes through as-is if regex fails.
+  }
+
   if (options.dryRun) {
     return {
       stepId: "",
       status: "success",
-      message: `Would write formula ${formula} to ${cell}${fillDown ? ` and fill down ${fillDown} rows` : ""}${rewriteNote}`,
+      message: `Would write formula ${formula} to ${cell}${fillDown ? ` and fill down ${fillDown} rows` : ""}${rewriteNote}${qualifierNote}`,
     };
   }
 
-  options.onProgress?.(`Writing formula to ${cell}...`);
+  // Log the final (post-transform) formula so if Office.js rejects it, the
+  // audit log shows exactly what we tried to write. Truncate long formulas
+  // so the log stays readable.
+  const formulaPreview = formula.length > 200 ? formula.slice(0, 200) + "…" : formula;
+  options.onProgress?.(`Writing formula to ${cell}: ${formulaPreview}`);
 
   const range = resolveRange(context, cell);
 
-  // Write the formula to the single cell
-  range.formulas = [[formula]];
-  await context.sync();
+  try {
+    range.formulas = [[formula]];
+    await context.sync();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      stepId: "",
+      status: "error",
+      message:
+        `Failed to write formula to ${cell}: ${msg}. ` +
+        `Formula that was rejected: ${formula}. ` +
+        `Common causes: (a) workbook-qualifier prefix like [File.xlsx] in the formula body, ` +
+        `(b) unbalanced parens after dynamic-array rewrite, (c) sheet name in the formula ` +
+        `doesn't exist or contains characters needing single-quote wrapping.`,
+      error: msg,
+    };
+  }
 
   // Optionally fill down — autoFill adjusts relative references automatically
   if (fillDown && fillDown > 1) {
@@ -125,7 +168,7 @@ async function handler(
   return {
     stepId: "",
     status: "success",
-    message: `Wrote formula to ${cell}${rowInfo}${rewriteNote}${clipNote}`,
+    message: `Wrote formula to ${cell}${rowInfo}${rewriteNote}${clipNote}${qualifierNote}`,
     outputs: { cell },
   };
 }

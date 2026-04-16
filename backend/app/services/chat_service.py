@@ -161,6 +161,13 @@ PLAN RULES:
    ALWAYS copy those exact strings into your params — sheet names may be in Hebrew or other languages.
    Example: user says "column [[Sheet1!A:A]]" → use "Sheet1!A:A" in params (NOT "[[Sheet1!A:A]]")
    Example: Referenced ranges has [[תוכנה!A:B]] → use "תוכנה!A:B" exactly — do NOT replace with "Sheet1"
+   NEVER include the workbook-qualifier `[FileName.xlsx]` prefix INSIDE a formula body.
+   The prefix is only valid for cross-workbook linked references and causes Office.js to reject the
+   write with "The argument is invalid or missing or has an incorrect format". Always strip it.
+   Example: user provides [[[MyBook.xlsx]Sheet6!A:A]] → inside a formula, use just `Sheet6!A:A` (or
+   `A:A` when the formula is anchored on that sheet). The workbook name NEVER appears in formula text.
+   For `cell` / `range` params it's also cleanest to drop the `[Book.xlsx]` prefix — the backend
+   resolves the active workbook automatically.
 4. If no [[...]] tokens are given, use the sheet/column names the user describes (e.g. "Sheet1!A:A")
 5. Set preserveFormatting: true unless the user explicitly asks to change formatting
 6. Each step must have a unique id like step_1, step_2, etc.
