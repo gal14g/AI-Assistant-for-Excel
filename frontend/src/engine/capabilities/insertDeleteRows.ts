@@ -23,6 +23,7 @@
 import { CapabilityMeta, InsertDeleteRowsParams, StepResult, ExecutionOptions } from "../types";
 import { registry } from "../capabilityRegistry";
 import { resolveRange } from "./rangeUtils";
+import { registerInverseOp } from "../snapshot";
 
 const meta: CapabilityMeta = {
   action: "insertDeleteRows",
@@ -46,6 +47,11 @@ async function handler(
   }
 
   const range = resolveRange(context, address);
+  range.load(["address", "worksheet/name"]);
+  await context.sync();
+  const sheetName = range.worksheet.name;
+  const rangeAddr = range.address.includes("!") ? range.address.split("!").pop()! : range.address;
+  const isRowAxis = shiftDirection === "down" || shiftDirection === "up";
 
   if (isInsert) {
     const direction =
@@ -53,22 +59,34 @@ async function handler(
         ? Excel.InsertShiftDirection.down
         : Excel.InsertShiftDirection.right;
     range.insert(direction);
+    await context.sync();
+    // Undo an insert = delete the same rows/columns we just added.
+    if (isRowAxis) {
+      registerInverseOp({ kind: "deleteRows", sheetName, rangeAddress: rangeAddr });
+    } else {
+      registerInverseOp({ kind: "deleteColumns", sheetName, rangeAddress: rangeAddr });
+    }
   } else {
     const direction =
       shiftDirection === "up"
         ? Excel.DeleteShiftDirection.up
         : Excel.DeleteShiftDirection.left;
     range.delete(direction);
+    await context.sync();
+    // NOTE: Deleted rows/columns can't be perfectly restored — Office.js has
+    // no bulk-restore for structural deletes. The cell-value snapshot
+    // captures the data that WAS there, but re-inserting blank rows + re-
+    // writing values can't always reproduce formulas that referenced the
+    // deleted range. Surface this in the message.
   }
 
-  await context.sync();
-
   const opLabel = isInsert ? "Inserted" : "Deleted";
-  const axisLabel = shiftDirection === "down" || shiftDirection === "up" ? "rows" : "columns";
+  const axisLabel = isRowAxis ? "rows" : "columns";
+  const undoNote = isInsert ? "" : " (deletion-based undo may lose formulas that referenced the removed cells)";
   return {
     stepId: "",
     status: "success",
-    message: `${opLabel} ${axisLabel} at ${address}`,
+    message: `${opLabel} ${axisLabel} at ${address}${undoNote}`,
     outputs: { range: address },
   };
 }

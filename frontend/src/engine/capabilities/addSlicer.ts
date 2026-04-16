@@ -70,5 +70,48 @@ async function handler(
   };
 }
 
-registry.register(meta, handler as any);
+// ── Legacy-Excel fallback (ExcelApi < 1.10) ──────────────────────────────────
+// Slicers require 1.10 (Excel 2019 UR8+). There is no way to reproduce the
+// floating filter-button UI with Office.js 1.3 primitives. The closest
+// functional equivalent is AutoFilter on the underlying table (applyFilter
+// handler), but we can't invoke another handler from here without creating
+// a circular dependency on the registry.
+//
+// Strategy: surface a clear "slicer not supported, use applyFilter instead"
+// status=success with a warning (not an error). The LLM/user sees the audit
+// line and can re-plan with applyFilter if the intent was data filtering
+// rather than visual chrome. This matches the research verdict: data outcome
+// is recoverable via a sibling handler; pure UX (one-click filter tiles) is
+// not reproducible and failing the whole plan over cosmetics is worse than
+// partial success.
+async function fallback(
+  _context: Excel.RequestContext,
+  params: AddSlicerParams,
+  options: ExecutionOptions,
+): Promise<StepResult> {
+  const { sourceField, sourceName } = params;
+
+  if (options.dryRun) {
+    return {
+      stepId: "",
+      status: "success",
+      message: `Would skip slicer for "${sourceField}" (unavailable on this Excel version).`,
+    };
+  }
+
+  options.onProgress?.("Legacy-Excel mode: slicers unavailable, emitting guidance...");
+
+  return {
+    stepId: "",
+    status: "success",
+    message:
+      `Slicer for "${sourceField}" on "${sourceName}" skipped — slicers require ` +
+      `ExcelApi 1.10+ (Excel 2019 UR8 / 2021 / Microsoft 365). For an equivalent ` +
+      `filter on this Excel version, add an applyFilter step targeting "${sourceName}" ` +
+      `with column "${sourceField}" (legacy-Excel fallback).`,
+    outputs: { slicerName: sourceField },
+  };
+}
+
+registry.register(meta, handler as any, fallback as any);
 export { meta };

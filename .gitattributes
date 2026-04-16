@@ -1,0 +1,18 @@
+# ── Git LFS: bundled sentence-transformers embedding model ───────────────────
+# After cloning for the first time, run once:
+#   git lfs install
+# Then the large files under backend/models/ will be pulled automatically.
+#
+# If you receive the repo without LFS configured, run the downloader instead:
+#   python backend/scripts/download_embedding_model.py
+backend/models/**/*.safetensors    filter=lfs diff=lfs merge=lfs -text
+backend/models/**/*.bin            filter=lfs diff=lfs merge=lfs -text
+backend/models/**/*.onnx           filter=lfs diff=lfs merge=lfs -text
+backend/models/**/*.h5             filter=lfs diff=lfs merge=lfs -text
+backend/models/**/*.pt             filter=lfs diff=lfs merge=lfs -text
+backend/models/**/*.pth            filter=lfs diff=lfs merge=lfs -text
+backend/models/**/*.msgpack        filter=lfs diff=lfs merge=lfs -text
+
+# ── Line endings: keep shell scripts as LF even on Windows checkouts ────────
+*.sh    text eol=lf
+*.py    text

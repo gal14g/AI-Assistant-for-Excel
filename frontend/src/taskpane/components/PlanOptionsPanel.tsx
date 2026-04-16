@@ -72,7 +72,7 @@ export const PlanOptionsPanel: React.FC<Props> = React.memo(({
                 transition: "all 0.15s ease",
               }}
             >
-              {opt.optionLabel}
+              <span dir="auto">{opt.optionLabelLocalized || opt.optionLabel}</span>
             </button>
           ))}
         </div>

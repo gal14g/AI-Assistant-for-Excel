@@ -101,9 +101,10 @@ class TestSnapshotInjection:
 
 
 class TestAllActionsAccepted:
-    def test_all_76_actions_have_param_models(self):
-        assert len(list(StepAction)) == 76
-        assert len(ACTION_PARAM_MODELS) == 76
+    def test_all_actions_have_param_models(self):
+        # Number grows as new capabilities land — the invariant that matters
+        # is that every enum member has a param model and vice versa.
+        assert len(ACTION_PARAM_MODELS) == len(list(StepAction))
         for action in StepAction:
             assert action in ACTION_PARAM_MODELS, f"{action} missing from ACTION_PARAM_MODELS"
 

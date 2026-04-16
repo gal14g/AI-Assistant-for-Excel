@@ -105,8 +105,8 @@ Nothing to do. This is on by default.
 
 ## 4. HuggingFace offline mode — already set
 
-The embedding model (`all-MiniLM-L6-v2`, 87 MB) is **bundled** in
-`backend/models/` and copied into the image. At runtime:
+The embedding model (`paraphrase-multilingual-MiniLM-L12-v2`, ~420 MB, multilingual) is **bundled** in
+`backend/models/` (via Git LFS) and copied into the image. At runtime:
 
 - `HF_HUB_OFFLINE=1` — no HuggingFace Hub calls
 - `TRANSFORMERS_OFFLINE=1` — no `transformers` update checks
@@ -173,7 +173,7 @@ mirroring source doesn't solve the npm/pip/base-image problem.
 | `office.js` | Commit it to the repo (`frontend/public/assets/office.js`) before transfer |
 | Node base image + npm packages | Internal Docker Hub mirror + npm registry mirror, OR pre-built image |
 | Python base image + pip packages | Internal Docker Hub mirror + PyPI mirror, OR pre-built image |
-| Embedding model | Already in repo (`backend/models/all-MiniLM-L6-v2/`) |
+| Embedding model | Already in repo via Git LFS (`backend/models/paraphrase-multilingual-MiniLM-L12-v2/`) |
 | LLM weights (if using Ollama) | Pre-pull into Ollama image outside, transfer |
 | LLM API keys (if using external gateway) | Injected at runtime via Secret |
 

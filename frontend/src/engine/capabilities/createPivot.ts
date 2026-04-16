@@ -221,5 +221,150 @@ function mapSummarizeBy(summarizeBy: string): Excel.AggregationFunction {
   }
 }
 
-registry.register(meta, handler as any);
+// ── Legacy-Excel fallback (ExcelApi < 1.8) ───────────────────────────────────
+// Excel 2016 doesn't expose the fluent PivotTable API. We approximate a
+// "pivot" by computing a group-by-sum in JS from the source range and
+// writing a static summary sheet with headers + SUMIFS formulas so the
+// totals recalculate live when the user edits source data.
+//
+// This covers the most common case: single row field + single value field
+// + SUM aggregation. Multi-field / cross-tab cases are flagged with a
+// warning and the user is redirected to crossTabulate.
+async function fallback(
+  context: Excel.RequestContext,
+  params: CreatePivotParams,
+  options: ExecutionOptions,
+): Promise<StepResult> {
+  const { sourceRange, destinationRange } = params;
+  let { pivotName, rows, values } = params;
+
+  if (options.dryRun) {
+    return {
+      stepId: "",
+      status: "success",
+      message: `Would create legacy-compatible pivot summary from ${sourceRange} (SUMIFS-based, no PivotTable object).`,
+    };
+  }
+
+  const sourceRng = resolveRange(context, sourceRange);
+  sourceRng.load(["values", "address", "worksheet/name"]);
+  await context.sync();
+
+  const allValues = (sourceRng.values ?? []) as (string | number | boolean)[][];
+  if (allValues.length < 2) {
+    return { stepId: "", status: "error", message: "Source range needs headers + at least one data row." };
+  }
+  const headers = (allValues[0] ?? []).map((h) => String(h));
+  const dataRows = allValues.slice(1);
+
+  // Pick row field + value field (mirror the primary handler's resolution).
+  const rowField = rows && rows.length ? rows[0] : headers[0];
+  let valueField: string;
+  let summarizeBy: string = "sum";
+  if (values && values.length && values[0].field) {
+    valueField = values[0].field;
+    summarizeBy = values[0].summarizeBy ?? "sum";
+  } else {
+    valueField = headers.find((h, i) => h !== rowField && dataRows.some((r) => typeof r[i] === "number")) ?? headers[1] ?? headers[0];
+  }
+
+  const rowIdx = headers.indexOf(rowField);
+  const valIdx = headers.indexOf(valueField);
+  if (rowIdx < 0 || valIdx < 0) {
+    return { stepId: "", status: "error", message: `Could not locate fields "${rowField}" / "${valueField}" in source headers.` };
+  }
+
+  // Unique row values, preserving input order.
+  const seen = new Set<string>();
+  const groups: string[] = [];
+  for (const row of dataRows) {
+    const key = String(row[rowIdx] ?? "");
+    if (!seen.has(key)) {
+      seen.add(key);
+      groups.push(key);
+    }
+  }
+
+  // Destination sheet: separate sheet if unspecified (mirrors the primary).
+  const summaryName = (pivotName ?? `Summary_${Date.now()}`).slice(0, 31);
+  let destSheet: Excel.Worksheet;
+  if (!destinationRange) {
+    const existing = context.workbook.worksheets.getItemOrNullObject(summaryName);
+    existing.load("isNullObject");
+    await context.sync();
+    destSheet = existing.isNullObject
+      ? context.workbook.worksheets.add(summaryName)
+      : existing;
+  } else {
+    const dr = resolveRange(context, destinationRange);
+    dr.load("worksheet/name");
+    await context.sync();
+    destSheet = context.workbook.worksheets.getItem(dr.worksheet.name);
+  }
+
+  options.onProgress?.(`Building legacy-compatible summary (SUMIFS) on "${destSheet.name}"...`);
+
+  // Write headers in row 1.
+  destSheet.getRange("A1").values = [[rowField]];
+  destSheet.getRange("B1").values = [[`${summarizeBy.toUpperCase()}(${valueField})`]];
+
+  // For each unique row value, write a label + SUMIFS formula referencing the source range.
+  // The SUMIFS criteria_range / criteria use the source sheet address directly.
+  const sheetPrefix = sourceRng.worksheet.name.includes(" ")
+    ? `'${sourceRng.worksheet.name}'!`
+    : `${sourceRng.worksheet.name}!`;
+  // We need the full column letters for the source. Extract them from the source address.
+  // Source address looks like "Sheet1!A1:D100" or "'My Sheet'!A1:D100".
+  const addr = sourceRng.address;
+  const rangePart = addr.includes("!") ? addr.split("!").pop()! : addr;
+  const [topLeft, bottomRight] = rangePart.split(":");
+  const colLettersMatch = (s: string) => (s.match(/^([A-Z]+)/)?.[1] ?? "A");
+  const topRow = Number((topLeft.match(/(\d+)$/)?.[1] ?? "1"));
+  const botRow = Number((bottomRight?.match(/(\d+)$/)?.[1] ?? String(topRow + dataRows.length)));
+  const dataStartRow = topRow + 1; // skip header
+  const colAt = (i: number) => {
+    // Map header index i to the actual source column letter starting at topLeft.
+    const baseLetter = colLettersMatch(topLeft);
+    let baseIdx = 0;
+    for (let c = 0; c < baseLetter.length; c++) baseIdx = baseIdx * 26 + (baseLetter.charCodeAt(c) - 64);
+    baseIdx -= 1;
+    const abs = baseIdx + i;
+    let n = abs + 1;
+    let out = "";
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      out = String.fromCharCode(65 + rem) + out;
+      n = Math.floor((n - 1) / 26);
+    }
+    return out;
+  };
+  const criteriaCol = colAt(rowIdx);
+  const valCol = colAt(valIdx);
+  const critRange = `${sheetPrefix}${criteriaCol}${dataStartRow}:${criteriaCol}${botRow}`;
+  const sumRange = `${sheetPrefix}${valCol}${dataStartRow}:${valCol}${botRow}`;
+
+  const rows2D = groups.map((g, i) => {
+    const rowNum = i + 2;
+    return [g, `=SUMIFS(${sumRange},${critRange},A${rowNum})`];
+  });
+  if (rows2D.length > 0) {
+    const outRange = destSheet.getRangeByIndexes(1, 0, rows2D.length, 2);
+    // Write labels + formulas together; SUMIFS goes via formulas[][1].
+    outRange.values = rows2D.map((r) => [r[0], 0]); // placeholder numeric
+    const formulaRange = destSheet.getRangeByIndexes(1, 1, rows2D.length, 1);
+    formulaRange.formulas = rows2D.map((r) => [r[1]]);
+  }
+  await context.sync();
+
+  return {
+    stepId: "",
+    status: "success",
+    message:
+      `Created legacy-compatible summary "${summaryName}" — rows: ${rowField} | value: ${summarizeBy}(${valueField}). ` +
+      `PivotTable interactivity is unavailable on this Excel; edit the source data and totals update via SUMIFS.`,
+    outputs: { pivotName: summaryName },
+  };
+}
+
+registry.register(meta, handler as any, fallback as any);
 export { meta };

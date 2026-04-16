@@ -79,7 +79,7 @@ Frontend (React + TypeScript)
     v
 Backend (FastAPI + OpenAI SDK)
     |
-    |-- Vector search (ChromaDB + all-MiniLM-L6-v2)
+    |-- Vector search (ChromaDB + paraphrase-multilingual-MiniLM-L12-v2)
     |   |-- Capability store: top-K relevant actions per query
     |   |-- Example store:    top-K relevant few-shot examples
     |
@@ -223,7 +223,7 @@ uvicorn main:app --reload --port 8000
 ```
 
 On first startup, the backend will:
-1. Load the `all-MiniLM-L6-v2` embedding model from `backend/models/` (bundled in the repo, ~87MB — no network call required)
+1. Load the `paraphrase-multilingual-MiniLM-L12-v2` embedding model from `backend/models/` (bundled in the repo, ~420MB — no network call required; supports Hebrew and 50+ other languages natively)
 2. Index all 76 capabilities into ChromaDB (~2 seconds)
 3. Seed curated few-shot examples into the example store
 4. Create the SQLite database (feedback + conversations)
@@ -390,7 +390,7 @@ Everything else (`uvicorn main:app --reload`, `npm run dev`, `docker build`, etc
 The project is designed to work on enclosed networks with zero outbound internet access:
 
 1. **LLM**: Use Ollama with a local model — `LLM_MODEL=ollama/qwen2.5:14b`, `LLM_BASE_URL=http://localhost:11434`.
-2. **Embeddings**: The `all-MiniLM-L6-v2` model is **pre-downloaded into `backend/models/`** and committed to the repo. The app auto-detects and loads from disk on startup — no Hugging Face Hub call.
+2. **Embeddings**: The `paraphrase-multilingual-MiniLM-L12-v2` model is **pre-downloaded into `backend/models/`** and committed to the repo (via Git LFS). The app auto-detects and loads from disk on startup — no Hugging Face Hub call.
 3. **Office.js**: Excel loads `https://appsforoffice.microsoft.com/lib/1/hosted/office.js` from Microsoft's CDN. On truly air-gapped networks, host a mirror internally and update `<script src="…">` in `frontend/src/taskpane/taskpane.html`.
 
 See [Switching LLM providers → Ollama](#ollama-free-local-no-api-key) for the local-model setup.
@@ -650,7 +650,7 @@ All settings are environment variables. Copy `.env.example` to `.env` in the pro
 
 | Variable | Default | Description |
 |---|---|---|
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence-transformers model for embeddings |
+| `EMBEDDING_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | Sentence-transformers model for embeddings (multilingual — Hebrew + 50 languages) |
 | `CHROMA_PERSIST_DIR` | `backend/data/chroma/` | ChromaDB storage directory |
 | `CAPABILITY_TOP_K` | `10` | How many capabilities to include per query |
 | `FEW_SHOT_TOP_K` | `5` | How many few-shot examples to retrieve per query |

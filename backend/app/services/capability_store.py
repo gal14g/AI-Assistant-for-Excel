@@ -1,12 +1,26 @@
 """
-Capability Store – vector-based semantic search for capability matching.
+Capability Store — vector-based semantic search for capability matching.
 
-Uses ChromaDB (local, persistent) + sentence-transformers to embed capability
-descriptions and example user queries.  At query time, the user's message is
-embedded and the top-K most relevant capabilities are returned.
+Backed by the `VectorStore` abstraction (`persistence/factory.py`). The
+concrete backend is ChromaDB (default) or pgvector, chosen at startup
+via `settings.vector_store_url`.
 
-This lets the LLM see only the relevant actions instead of all 34+, resulting
-in smaller prompts, faster responses, and more reliable tool selection.
+Flow:
+  1. `init_store()` embeds every (action description, example query) pair
+     into the `capabilities` collection.
+  2. `search_capabilities(query)` returns the top-K most relevant action
+     names for a user message. The LLM only sees those, not all 70+
+     actions — smaller prompt, faster responses, better tool selection.
+
+Re-indexing: `init_store()` is idempotent. If the collection's document
+count already matches the expected corpus size, seeding is skipped. A
+full re-index is triggered whenever the expected count changes (e.g.
+after adding new example queries below or editing an action description).
+
+The full catalogue of example queries per action lives in
+`CAPABILITY_EXAMPLES` below — paraphrase-multilingual-MiniLM-L12-v2 covers
+Hebrew natively so queries in either language match without a translation
+step.
 """
 
 from __future__ import annotations
@@ -18,13 +32,11 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-# ── Module state ─────────────────────────────────────────────────────────────
-
-_collection = None  # chromadb.Collection
 _ready = False
+_expected_count = 0
 
 # ── Example user queries per capability ──────────────────────────────────────
-# These are embedded alongside descriptions for better recall.  Users say
+# These are embedded alongside descriptions for better recall. Users say
 # things like "make a chart" — the description alone ("Create a chart.
 # Params: dataRange…") wouldn't match as well.
 
@@ -420,7 +432,6 @@ CAPABILITY_EXAMPLES: dict[str, list[str]] = {
         "תן שם לטווח הזה",
         "צור טווח בעל שם",
     ],
-    # --- New capabilities (batch 2) ---
     "fuzzyMatch": [
         "fuzzy match company names between two columns",
         "approximate string matching",
@@ -622,103 +633,83 @@ CAPABILITY_EXAMPLES: dict[str, list[str]] = {
     ],
 }
 
+_COLLECTION = "capabilities"
+
 
 def init_store() -> None:
     """
-    Initialise the ChromaDB collection and index all capabilities.
-
-    Safe to call multiple times — skips re-indexing if the document count
-    matches (idempotent on restarts).
+    Seed the `capabilities` collection with (description, example) pairs
+    for every action. Idempotent — skips if the collection is already at
+    the expected count.
     """
-    global _collection, _ready  # noqa: PLW0603
+    global _ready, _expected_count  # noqa: PLW0603
 
-    from .chroma_client import get_chroma_client, get_embedding_fn
+    from ..persistence.factory import get_vector_store
     from .planner import CAPABILITY_DESCRIPTIONS
 
-    client = get_chroma_client()
-    embedding_fn = get_embedding_fn()
+    store = get_vector_store()
 
-    # Build the full document corpus: description + example queries per action
     ids: list[str] = []
     documents: list[str] = []
     metadatas: list[dict[str, str]] = []
 
     for action, description in CAPABILITY_DESCRIPTIONS.items():
-        # The description itself
         ids.append(f"{action}_desc")
         documents.append(f"{action}: {description}")
         metadatas.append({"action": action})
 
-        # Example user queries
         for i, example in enumerate(CAPABILITY_EXAMPLES.get(action, [])):
             ids.append(f"{action}_ex_{i}")
             documents.append(example)
             metadatas.append({"action": action})
 
-    expected_count = len(ids)
+    _expected_count = len(ids)
 
-    # Check if we need to re-index
-    existing = client.get_or_create_collection(
-        name="capabilities",
-        embedding_function=embedding_fn,
-    )
-
-    if existing.count() == expected_count:
+    if store.count(_COLLECTION) == _expected_count:
         logger.info(
             "Capability store already indexed (%d docs) — skipping.",
-            expected_count,
+            _expected_count,
         )
-        _collection = existing
         _ready = True
         return
 
-    # Re-index: delete old collection and create fresh
-    client.delete_collection("capabilities")
-    _collection = client.create_collection(
-        name="capabilities",
-        embedding_function=embedding_fn,
-    )
-
-    _collection.add(ids=ids, documents=documents, metadatas=metadatas)
-    logger.info("Indexed %d capability documents into ChromaDB.", expected_count)
+    # Full re-index: nuke and repopulate.
+    store.recreate(_COLLECTION)
+    store.upsert(_COLLECTION, ids, documents, metadatas)
+    logger.info("Indexed %d capability documents.", _expected_count)
     _ready = True
 
 
 def is_ready() -> bool:
-    """Whether the capability store has been initialised."""
     return _ready
 
 
 @functools.lru_cache(maxsize=256)
 def search_capabilities(query: str, top_k: int | None = None) -> list[str]:
     """
-    Return the action names of the top-K most relevant capabilities
-    for the given user query.
+    Return the action names of the top-K most relevant capabilities.
 
-    Uses paraphrase-multilingual-MiniLM-L12-v2 which supports 50+
-    languages including Hebrew, so queries in any language match
-    correctly against the capability examples.
+    Uses the multilingual embedding model so English and Hebrew queries
+    match against the same example pool without translation.
     """
-    if not _ready or _collection is None:
-        # Fallback: return all actions (no filtering)
+    if not _ready:
         from .planner import CAPABILITY_DESCRIPTIONS
 
         return list(CAPABILITY_DESCRIPTIONS.keys())
 
+    from ..persistence.factory import get_vector_store
+
+    store = get_vector_store()
     k = top_k or settings.capability_top_k
 
-    # Query more than k to account for deduplication (multiple docs per action)
-    results = _collection.query(
-        query_texts=[query],
-        n_results=min(k * 3, _collection.count()),
-    )
+    # Over-fetch to account for dedup across multiple docs per action.
+    fetch = min(k * 3, max(_expected_count, 1))
+    results = store.query(_COLLECTION, query, top_k=fetch)
 
-    # Deduplicate by action name while preserving relevance order
     seen: dict[str, None] = {}
-    if results and results["metadatas"]:
-        for meta in results["metadatas"][0]:
-            action = meta["action"]
-            if action not in seen:
-                seen[action] = None
+    for hit in results:
+        action = (hit.get("metadata") or {}).get("action")
+        if action and action not in seen:
+            seen[action] = None
 
     return list(seen.keys())[:k]

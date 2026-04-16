@@ -25,8 +25,9 @@ import {
   ExecutionOptions,
 } from "./types";
 import { registry } from "./capabilityRegistry";
-import { captureSnapshotBatched, rollbackPlan } from "./snapshot";
+import { captureSnapshotBatched, createEmptySnapshot, rollbackPlan } from "./snapshot";
 import { validatePlan } from "./validator";
+import { meetsRequirement, parseApiRequirement } from "./apiSupport";
 
 // ---------------------------------------------------------------------------
 // Execution audit log — persistent structured failure data for debugging
@@ -317,8 +318,8 @@ export async function executePlan(
 
     callbacks.onStepStart(resolvedStep);
 
-    const handler = registry.getHandler(resolvedStep.action);
-    if (!handler) {
+    const primaryHandler = registry.getHandler(resolvedStep.action);
+    if (!primaryHandler) {
       // Reaching here usually means: validator accepted the action (so the
       // name is in the schema) but no handler is wired up in the registry.
       // That's almost always a stale add-in bundle — capabilities/index.ts
@@ -339,8 +340,52 @@ export async function executePlan(
       break;
     }
 
+    // ── API-support dispatch ────────────────────────────────────────────────
+    // If the handler declares a `requiresApiSet` that this Excel build does
+    // not satisfy, try the registered fallback (e.g. Excel 2016 running a
+    // PivotTable plan → SUMIFS summary sheet). If no fallback is registered,
+    // surface a structured "feature unavailable" error so the UI can show a
+    // helpful suggestion rather than letting Office.js throw cryptically mid-
+    // step.
+    const meta = registry.getMeta(resolvedStep.action);
+    let handler = primaryHandler;
+    let usingFallback = false;
+    if (meta?.requiresApiSet && !meetsRequirement(meta.requiresApiSet)) {
+      const fallback = registry.getFallback(resolvedStep.action);
+      if (fallback) {
+        handler = fallback;
+        usingFallback = true;
+        callbacks.onProgress(
+          resolvedStep.id,
+          `Using compatibility fallback (requires ${meta.requiresApiSet}).`,
+        );
+      } else {
+        const parsed = parseApiRequirement(meta.requiresApiSet);
+        const needed = parsed ? `${parsed.setName} ${parsed.version}+` : meta.requiresApiSet;
+        const errorMsg =
+          `"${resolvedStep.action}" requires ${needed}, which this Excel ` +
+          `version doesn't support. Upgrade to Excel 2019/2021/Microsoft 365, ` +
+          `or ask the assistant for an alternative approach.`;
+        const result: StepResult = {
+          stepId: resolvedStep.id,
+          status: "error",
+          message: errorMsg,
+          error: errorMsg,
+        };
+        state.stepResults.push(result);
+        stepResultsMap.set(resolvedStep.id, result);
+        state.status = "failed";
+        callbacks.onError(resolvedStep.id, errorMsg);
+        callbacks.onStepComplete(resolvedStep, result);
+        break;
+      }
+    }
+
     try {
       const result = await executeStep(resolvedStep, handler, execOptions, callbacks, plan.planId);
+      if (usingFallback && result.status === "success") {
+        result.message = `${result.message} (compatibility fallback)`;
+      }
       state.stepResults.push(result);
       stepResultsMap.set(resolvedStep.id, result);
       callbacks.onStepComplete(resolvedStep, result);
@@ -432,12 +477,17 @@ async function executeStep(
   };
 
   return Excel.run(async (context) => {
-    // Snapshot before mutating steps (unless dry run)
+    // Snapshot before mutating steps (unless dry run). If the step has no
+    // range params (structural ops like addSheet / tabColor / sheetPosition),
+    // we still push an EMPTY snapshot so the handler can register an inverse
+    // op on it — otherwise undo can't reverse structural changes.
     const meta = registry.getMeta(step.action);
     if (meta?.mutates && !options.dryRun) {
       const rangeAddresses = extractRangesFromParams(step);
       if (rangeAddresses.length > 0) {
         await captureSnapshotBatched(context, planId, rangeAddresses);
+      } else {
+        createEmptySnapshot(planId);
       }
     }
 

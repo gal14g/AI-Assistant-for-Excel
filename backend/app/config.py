@@ -54,6 +54,24 @@ class Settings(BaseSettings):
     serve_static: bool = False
     static_dir: str = "./static"
 
+    # ── MCP server (desktop-only bridge to xlwings) ──────────────────────────
+    # "disabled" (default) — no MCP; run as a normal web backend.
+    # "stdio"            — expose tools over MCP stdio; invoked via the
+    #                      `excel-copilot-mcp` console script so any chat
+    #                      client (Claude Desktop, Cursor, Windsurf, Zed, …)
+    #                      can drive Excel through xlwings.
+    # MCP mode requires a running desktop Excel instance on the same machine;
+    # Excel Online / iPad / Linux users continue to use the add-in.
+    mcp_mode: str = "disabled"
+
+    # ── Swappable persistence (Item 5) ────────────────────────────────────────
+    # database_url      — "" or sqlite:// → SQLite at feedback_db_path (default)
+    #                     postgresql://... → Postgres via asyncpg
+    # vector_store_url  — "" or chroma:// → local ChromaDB (default)
+    #                     pgvector://... / postgresql://... → pgvector in Postgres
+    database_url: str = ""
+    vector_store_url: str = ""
+
     model_config = {
         "env_file": str(_ENV_FILE),
         "env_file_encoding": "utf-8",

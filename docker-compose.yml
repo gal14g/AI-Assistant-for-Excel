@@ -38,7 +38,7 @@ services:
       LLM_JSON_MODE: ${LLM_JSON_MODE:-false}
 
       # ── Embedding / search ──────────────────────────────────────────────────
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-paraphrase-multilingual-MiniLM-L12-v2}
       CAPABILITY_TOP_K: ${CAPABILITY_TOP_K:-10}
       FEW_SHOT_TOP_K: ${FEW_SHOT_TOP_K:-5}
 

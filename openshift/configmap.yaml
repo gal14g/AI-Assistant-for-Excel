@@ -27,7 +27,7 @@ data:
   #   Cohere:    command-a-03-2025
   #   Ollama:    ollama/llama3
   LLM_MODEL: "gpt-4o"
-  LLM_MAX_TOKENS: "4096"
+  LLM_MAX_TOKENS: "8192"
   LLM_TEMPERATURE: "0.1"
   LLM_JSON_MODE: "false"
 
@@ -35,11 +35,28 @@ data:
   LLM_BASE_URL: ""
   LLM_API_VERSION: ""
 
-  # Embedding model for semantic search (downloaded on first startup ~80MB):
-  EMBEDDING_MODEL: "all-MiniLM-L6-v2"
-  CAPABILITY_TOP_K: "10"
+  # Embedding model for semantic search.
+  # The multilingual model is bundled into the image at backend/models/<name>/
+  # so air-gapped clusters (HF_HUB_OFFLINE=1) can load it from disk.
+  EMBEDDING_MODEL: "paraphrase-multilingual-MiniLM-L12-v2"
+  CAPABILITY_TOP_K: "30"
   FEW_SHOT_TOP_K: "5"
 
   # CORS — set to your actual deployed add-in URL.
   # In OpenShift the frontend is same-origin, but Office.js iframes may need this.
   CORS_ORIGINS: '["https://excel-assistant.apps.your-cluster.example.com"]'
+
+  # ── Swappable persistence (Item 5) ──────────────────────────────────────
+  # Leave empty to use the default SQLite+ChromaDB backends (single-node
+  # friendly; no external services). For multi-pod production deployments,
+  # set both to a shared Postgres cluster with the `vector` extension:
+  #   DATABASE_URL: "postgresql://user:pass@postgres.example.com:5432/excel_copilot"
+  #   VECTOR_STORE_URL: "pgvector://user:pass@postgres.example.com:5432/excel_copilot"
+  # (Secrets should live in a Secret object and be referenced via envFrom.)
+  DATABASE_URL: ""
+  VECTOR_STORE_URL: ""
+
+  # ── MCP server ──────────────────────────────────────────────────────────
+  # Leave "disabled" for the web/add-in deployment. "stdio" is only used by
+  # the `excel-copilot-mcp` CLI entrypoint on desktop machines, not in-cluster.
+  MCP_MODE: "disabled"

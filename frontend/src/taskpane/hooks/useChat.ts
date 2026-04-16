@@ -167,7 +167,10 @@ export function useChat(): ChatState & ChatActions {
         const assistantMsg: ChatMessage = {
           id: response.assistantMessageId ?? uuid(),
           role: "assistant",
-          content: response.message,
+          // Prefer the localized translation when the backend emitted one.
+          // Canonical English `message` remains the source of truth for logs/
+          // persistence; this only affects what the user sees.
+          content: response.messageLocalized || response.message,
           plan: response.plans?.[0]?.plan ?? response.plan,
           timestamp: new Date().toISOString(),
         };
@@ -304,7 +307,10 @@ export function useChat(): ChatState & ChatActions {
         const assistantMsg: ChatMessage = {
           id: response.assistantMessageId ?? uuid(),
           role: "assistant",
-          content: response.message,
+          // Prefer the localized translation when the backend emitted one.
+          // Canonical English `message` remains the source of truth for logs/
+          // persistence; this only affects what the user sees.
+          content: response.messageLocalized || response.message,
           plan: response.plans?.[0]?.plan ?? response.plan,
           timestamp: new Date().toISOString(),
         };

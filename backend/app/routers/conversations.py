@@ -17,14 +17,7 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from ..db import (
-    delete_conversation,
-    get_conversation,
-    list_conversations,
-    pop_last_exchange,
-    rename_conversation,
-    update_conv_message_execution,
-)
+from ..persistence.factory import get_repositories
 
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
@@ -70,13 +63,13 @@ class ExecutionPatchRequest(BaseModel):
 
 @router.get("", response_model=list[ConversationSummary])
 async def list_all() -> list[ConversationSummary]:
-    rows = await list_conversations(limit=100)
+    rows = await get_repositories().conversations.list(limit=100)
     return [ConversationSummary(**r) for r in rows]
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
 async def get_one(conversation_id: str) -> ConversationDetail:
-    conv = await get_conversation(conversation_id)
+    conv = await get_repositories().conversations.load(conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return ConversationDetail(**conv)
@@ -84,11 +77,12 @@ async def get_one(conversation_id: str) -> ConversationDetail:
 
 @router.patch("/{conversation_id}", response_model=ConversationSummary)
 async def rename_one(conversation_id: str, body: RenameRequest) -> ConversationSummary:
-    ok = await rename_conversation(conversation_id, body.title)
+    repos = get_repositories()
+    ok = await repos.conversations.rename(conversation_id, body.title)
     if not ok:
         raise HTTPException(status_code=404, detail="Conversation not found")
     # Return refreshed summary
-    rows = await list_conversations(limit=1000)
+    rows = await repos.conversations.list(limit=1000)
     for r in rows:
         if r["id"] == conversation_id:
             return ConversationSummary(**r)
@@ -97,7 +91,7 @@ async def rename_one(conversation_id: str, body: RenameRequest) -> ConversationS
 
 @router.delete("/{conversation_id}")
 async def delete_one(conversation_id: str) -> dict[str, bool]:
-    ok = await delete_conversation(conversation_id)
+    ok = await get_repositories().conversations.delete(conversation_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"deleted": True}
@@ -108,7 +102,7 @@ async def patch_message_execution(
     conversation_id: str, message_id: str, body: ExecutionPatchRequest,
 ) -> dict[str, bool]:
     """Attach execution state + progress log to a specific message."""
-    ok = await update_conv_message_execution(
+    ok = await get_repositories().conversations.update_message_execution(
         conversation_id=conversation_id,
         message_id=message_id,
         execution=body.execution,
@@ -122,5 +116,5 @@ async def patch_message_execution(
 @router.delete("/{conversation_id}/last")
 async def pop_last(conversation_id: str) -> dict[str, int]:
     """Remove the last user+assistant exchange (used by undo)."""
-    removed = await pop_last_exchange(conversation_id)
+    removed = await get_repositories().conversations.pop_last_exchange(conversation_id)
     return {"removed": removed}

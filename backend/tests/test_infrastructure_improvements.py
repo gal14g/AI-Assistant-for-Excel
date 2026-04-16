@@ -368,13 +368,14 @@ class TestRefinementPromptInjection:
 
 
 class TestAll76ActionsRegistered:
-    """Ensure all 76 StepAction enum values have param models."""
+    """Ensure every StepAction enum value has a param model. The count grows
+    with each new capability — what matters is the StepAction ↔ ACTION_PARAM_MODELS
+    bijection, not the specific number."""
 
-    def test_76_actions_in_enum(self):
-        assert len(list(StepAction)) == 76
+    def test_param_model_per_action(self):
+        assert len(ACTION_PARAM_MODELS) == len(list(StepAction))
 
-    def test_76_param_models(self):
-        assert len(ACTION_PARAM_MODELS) == 76
+    def test_every_action_has_model(self):
         for action in StepAction:
             assert action in ACTION_PARAM_MODELS, f"{action} missing from ACTION_PARAM_MODELS"
 

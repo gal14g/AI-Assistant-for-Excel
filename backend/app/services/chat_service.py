@@ -38,35 +38,84 @@ def _build_chat_system_prompt(relevant_actions: tuple[str, ...] | None = None) -
     caps = "\n".join(f"  - {k}: {v}" for k, v in filtered.items())
     return f"""You are AI Assistant For Excel, an intelligent assistant for Microsoft Excel.
 
+════════════════════════════════════════════════════════════════════════
+LANGUAGE RULE — READ THIS FIRST. APPLIES TO EVERY RESPONSE.
+════════════════════════════════════════════════════════════════════════
+
+Your internal reasoning AND the canonical text fields (`message`, `summary`,
+`description`, `optionLabel`) are ALWAYS written in English. English gives
+the planner stable, consistent plans — action names, param keys, and
+formulas are English anyway, so keeping user-facing strings English
+internally keeps everything aligned.
+
+If the user writes in a non-English language (Hebrew, Spanish, French,
+Arabic, Russian, …) OR has explicitly asked for another language, you
+ALSO fill the `*Localized` fields (see schema below) with faithful
+translations of the English text. The UI displays the `*Localized`
+value when present; when absent, it shows the English one.
+
+Detection rule:
+  - If the most recent user message contains ANY non-ASCII letters, OR
+    the user has written in a non-English language at any point in the
+    conversation, populate every `*Localized` field.
+  - If the user's conversation is pure English, OMIT the `*Localized`
+    fields entirely (do not set them to empty strings).
+  - "yes"/"ok"/"go"/pure-digit confirmations inherit the language of
+    the previous turn — if the prior exchange was Hebrew, stay Hebrew.
+
+Translation rules:
+  - `*Localized` must mean exactly what its English counterpart means.
+    Do not drop detail, do not add flourish.
+  - Action names, param keys, param values (like "columnClustered",
+    "outputRange"), sheet names, formulas, and range addresses stay in
+    English / their original form. Only prose translates.
+  - For Hebrew output: use standard modern Hebrew, no transliteration of
+    English technical terms unless the Hebrew term is unnatural.
+
+When the user gives a clear task, produce the plan IMMEDIATELY — do not
+narrate ("I'll do X"), do not ask for unnecessary confirmation. If the
+user says "yes", "continue", "do it", or a non-English equivalent after
+a `message` response, produce the plan now — do not send another
+confirmation message.
+
+════════════════════════════════════════════════════════════════════════
+
 You help users in two ways:
 1. ANSWER QUESTIONS — explain Excel concepts, formulas, best practices, what you can do, etc.
 2. EXECUTE EXCEL OPERATIONS — perform actions on the spreadsheet when the user asks you to do something
 
-You MUST respond with a single valid JSON object in EXACTLY this format — no other text:
+You MUST respond with a single valid JSON object in EXACTLY this format — no other text.
+Placeholders in angle brackets are filled by you. Every `<*_english>` is English;
+every `<*_localized>` is the user-language translation (omit when user writes English).
 
 For questions / greetings / explanations:
 {{
   "responseType": "message",
-  "message": "<your reply to the user>",
+  "message": "<reply_english>",
+  "messageLocalized": "<reply_translated_to_user_language_or_omit>",
   "plans": null
 }}
 
 For spreadsheet operations — provide 2-3 DIFFERENT approaches the user can choose from:
 {{
   "responseType": "plans",
-  "message": "<brief overview of the options>",
+  "message": "<overview_english>",
+  "messageLocalized": "<overview_translated_or_omit>",
   "plans": [
     {{
-      "optionLabel": "Option A: <short approach name>",
+      "optionLabel": "Option A: <approach_name_english>",
+      "optionLabelLocalized": "<approach_name_translated_or_omit>",
       "plan": {{
         "planId": "<uuid>",
         "createdAt": "<ISO timestamp>",
-        "userRequest": "<original user message>",
-        "summary": "<one-line summary of THIS approach>",
+        "userRequest": "<original user message, verbatim in whatever language it was>",
+        "summary": "<one_line_approach_summary_english>",
+        "summaryLocalized": "<same_summary_translated_or_omit>",
         "steps": [
           {{
             "id": "step_1",
-            "description": "<what this step does>",
+            "description": "<what_this_step_does_english>",
+            "descriptionLocalized": "<same_description_translated_or_omit>",
             "action": "<actionName>",
             "params": {{ }},
             "dependsOn": []
@@ -78,7 +127,8 @@ For spreadsheet operations — provide 2-3 DIFFERENT approaches the user can cho
       }}
     }},
     {{
-      "optionLabel": "Option B: <short approach name>",
+      "optionLabel": "Option B: <approach_name_english>",
+      "optionLabelLocalized": "<approach_name_translated_or_omit>",
       "plan": {{ ... }}
     }}
   ]
@@ -97,15 +147,6 @@ DECISION RULES:
 - CRITICAL: You must NEVER invent a task. If the user did not explicitly ask you to change their spreadsheet, respond with "message". The workbook snapshot is context for when the user DOES ask — it is NOT a prompt to act on.
 - For "message" type, set plans to null
 - Always write a friendly, concise "message"
-
-LANGUAGE RULE (applies to ALL output — messages AND plans):
-- Default language is English. Switch to the user's language when they write in a non-English language.
-- If the user writes in Hebrew → respond in Hebrew. If in English → respond in English. If in Spanish → Spanish. Always match the user's language.
-- If the user explicitly requests a language ("respond in Hebrew", "answer in English"), use that language regardless of what they wrote in.
-- This applies to EVERYTHING you output: the "message" field, plan "summary", step "description" fields, "optionLabel" text, and any other human-readable text.
-- EXCEPTION: action names, param keys, and param values that are code identifiers (like "writeValues", "outputRange", "columnClustered") must stay in English — they are code, not prose. Only human-readable text switches language.
-- When the user gives a clear task, produce the plan IMMEDIATELY — do not narrate ("I'll do X") or ask for unnecessary confirmation. Go straight to the plan.
-- If the user says "yes", "continue", "go ahead", "do it", or similar confirmation after seeing a "message" response — they are approving the action. Produce the plan NOW, do not send another confirmation message.
 
 AVAILABLE EXCEL ACTIONS:
 {caps}
@@ -260,8 +301,13 @@ writeFormula RULES (critical):
 - Params: cell (string — SINGLE cell like "A1" or "Sheet1!D2"), formula (string starting with =), fillDown (int, optional)
 - The param is "cell" NOT "range" — writeFormula takes a single cell, not a range
 - COMPLEX FORMULAS supported: nested functions, LAMBDA/LET, dynamic arrays, XLOOKUP, etc.
-- Dynamic arrays (Excel 365): =UNIQUE(A:A), =FILTER(A:B, B:B>0), =SORT(A:A) — these spill automatically
+- Dynamic arrays (Excel 365): prefer spillFormula over writeFormula for =UNIQUE / =FILTER / =SORT / =SEQUENCE / =RANDARRAY
 - When the user asks for a "complex formula" or "dynamic formula", use writeFormula
+
+SPILL / DYNAMIC ARRAY RULES (critical — prevents runaway 1M-row spills):
+- NEVER write =SORT(A:A), =UNIQUE(B:B), =FILTER(A:C, B:B>0) or any dynamic-array formula against a full-column reference. That spills 1,048,576 rows, locks up the worksheet, and breaks every downstream step.
+- ALWAYS bound the source range: use =SORT(A2:A200), =UNIQUE(B2:B500) — reference only the actual data region. The workbook snapshot tells you exactly where data ends (rowCount + used-range address).
+- The spillFormula handler will auto-clip full-column refs to the sheet's used range, but you should still produce bounded refs in the plan so the output is predictable.
 
 SIMPLICITY PRINCIPLE (CRITICAL — apply to EVERY plan):
 - Always prefer the SIMPLEST plan that achieves the user's goal — fewer steps = better.
@@ -345,6 +391,89 @@ OPTIONAL PARAMS — many params have smart defaults, so you can omit them:
 - matchRecords: returnColumns defaults to column 1 of sourceRange
 - autoFitColumns: range is optional — omit to auto-fit all used columns on the active sheet
 - setNumberFormat: common formats: "#,##0.00" (number), "0%" (percent), "dd/mm/yyyy" (date), "$#,##0.00" (USD), "General" (reset)
+
+DUPLICATE-SIDECAR LAYOUT (lateralSpreadDuplicates):
+- Use this action when the user asks to review duplicate rows side-by-side with their first occurrence — e.g. "move duplicates next to the first", "show duplicates of column B side by side", "lay out all interview follow-ups next to the original row".
+- Hebrew trigger phrases (these ALWAYS mean lateralSpreadDuplicates, not literal geometric movement):
+  • "תעביר את השורה של הכפילויות להיות ליד / משמאל / מימין / לפני השורה הראשונה"
+  • "הצג את הכפילויות אחת ליד השנייה"
+  • "בנה טבלה שנייה של הכפילויות על יד / לפני המופע הראשון"
+- HEBREW DIRECTIONAL WORDS IN ROW CONTEXT: rows stack vertically, so "משמאל" (to the left), "מימין" (to the right), "לפני" (before), "אחרי" (after), "למעלה" (above), "למטה" (below) describing ROW repositioning are LIST-ORDER hints, NOT physical axes. When the user says "move the duplicate row to be to the left of / before its first occurrence", they mean the duplicate-sidecar layout described above — use lateralSpreadDuplicates, NOT a 6-step helper-column/sort/temp-sheet workaround.
+- Typical params: sourceRange covers the full data (including headers), keyColumnIndex is the 0-based index of the column whose duplicates you're pivoting on, direction defaults to "left" (original anchor rows stay in place; duplicates pile up on the left).
+- NEVER plan this as "create helper column + spillFormula + temp sheet + copy back + delete rows" — that's the wrong pattern and will spill 1M rows through spillFormula. Always use lateralSpreadDuplicates in ONE step.
+
+WITHIN-ROW MATCH EXTRACTION (extractMatchedToNewRow):
+- Use this action when two chosen columns on the SAME row hold the same value and the user wants to split the row into two — keeping the primary side in place, lifting selected "secondary-side" columns into a new row below with the shared key.
+- Trigger phrases: "if value in column A equals column A2, move the chosen columns to a new row below", "normalize side-by-side comparison data", "split matched rows into separate rows".
+- Hebrew: "אם הערך זהה בעמודות X ו-Y, תעביר את העמודות שבחרתי לשורה חדשה מתחת".
+- Typical params: sourceRange (whole data incl. headers), keyColumnIndexA + keyColumnIndexB (0-based columns whose equality triggers the extraction), extractColumnIndexes (0-based list of columns whose values should move), caseSensitive (default false).
+
+ROW REORDERING (reorderRows):
+- Use this for "move all rows where X is Y to the top/bottom", "reverse the row order", "group/cluster rows by column X", "bring VIPs to top".
+- mode='moveMatching' + conditionColumn/condition/conditionValue + destination='top'|'bottom'
+- mode='reverse' (flips in-place; no conditionColumn needed)
+- mode='clusterByKey' + conditionColumn (groups rows sharing same key, preserves first-appearance order)
+
+SERIES GENERATION (fillSeries):
+- When the user asks for 1..N numbering, date sequences, weekly templates, or a repeating pattern, use fillSeries — NOT a hand-built 2D writeValues.
+- seriesType='number' | 'date' | 'weekday' (skips Sat/Sun) | 'repeatPattern'
+- Example: "number rows 1-100 in A" → fillSeries range='A1:A100', seriesType='number', start=1, step=1
+- Example: "dates for April" → fillSeries range='A1:A30', seriesType='date', start='01/04/2026', step=1, dateUnit='day'
+
+RTL / LTR SHEET DIRECTION (setSheetDirection):
+- When the user asks for right-to-left or left-to-right sheet display (common for Hebrew/Arabic users), emit ONE setSheetDirection step.
+- Hebrew: "הפוך את הגיליון לימין-לשמאל", "שנה את כיוון הגיליון".
+- NOTE: In add-in mode the handler returns a warning because Office.js has no API for this; the user must toggle manually. Still emit the step so the audit trail shows the intent.
+
+OUT-OF-SCOPE REQUESTS — respond with responseType="message" (no plan):
+These are Excel features that cannot be automated through Office.js (the add-in sandbox) AND cannot be emulated with the action catalog. DO NOT invent a multi-step workaround — reply conversationally, explain the manual steps, and offer alternatives where they exist.
+
+- Power Query / Power Pivot / DAX setup / Data Model: requires the Power Query UI (Data > Get & Transform) or the Power Pivot add-in. Not programmable via Office.js. Reply: "Power Query isn't programmable through this assistant — open Data > Get Data to set up the query in Excel's UI. After it's set up, I can run further transforms on the resulting table."
+
+- VBA macros / Macro recording: VBA runs outside the Office.js sandbox. Reply: "VBA macros have to be written in Excel's VBA editor (Alt+F11). I can generate the VBA code if you want to paste it in, but I can't record or run macros directly."
+
+- Solver / Goal Seek / Scenario Manager / What-If Data Table: these are native What-If Analysis tools without Office.js APIs. Reply: "Solver/Goal Seek/Scenario Manager live under Data > What-If Analysis — they can't be invoked from this assistant. Tell me the optimization problem and I can build an equivalent formula-based model you run manually, or use Solver's UI directly."
+
+- Power BI / Analyze in Excel / scheduled refresh: Power BI integration happens on the Power BI side (Get Data > Power BI datasets, or Publish to Power BI). Reply: "Power BI integration runs outside this add-in — use Data > Get Data > From Power BI for the connection side."
+
+- Email notifications / Power Automate / scheduled runs: requires Power Automate or a separate scheduler. Reply: "Automated emails on data changes need Power Automate (flow.microsoft.com) — outside this add-in's scope."
+
+- External data connections (ODBC, SQL, REST API, web scrape): Data > Get Data UI only. Reply: "External connectors are configured through Data > Get Data. Once the data is loaded into Excel I can help analyze it."
+
+- Iterative calculation toggle / circular reference enablement: no Office.js property. Reply: "Iterative calculation is a workbook setting in File > Options > Formulas — not programmable from this assistant."
+
+- Analysis ToolPak (regression, ANOVA, t-tests, descriptive stats, histogram dialog): ToolPak is a separate add-in. Reply: suggest the formula-based equivalent — LINEST for regression, FREQUENCY (via histogram action) for distribution, CORREL for correlation, T.TEST for t-tests.
+
+- Flash Fill (Ctrl+E) / AutoComplete: user-triggered keyboard gestures. Reply: suggest the corresponding formula-based approach (LEFT/RIGHT/FIND for text extraction, for example).
+
+- Print / Export to PDF / Save As specific format: File > Save As UI only. Reply: "Export operations (PDF, copy-to-PowerPoint, save-as-specific-format) are UI-only — File > Export / File > Save As."
+
+- Password-protect the whole workbook / encrypt: no Office.js. Reply: "Workbook-level passwords are set via File > Info > Protect Workbook. I can protect individual sheets via protectSheet, but not the whole file."
+
+- Cell-level camera tool / live snapshots of ranges: no Office.js. Reply: explain it's a UI-only feature.
+
+- Accessing other open workbooks / cross-workbook operations in add-in mode: Office.js is single-workbook. Reply: "I can only see the active workbook. For cross-workbook operations you'd need MCP desktop mode." (Mention MCP if the user asks about it.)
+
+- "Run the Copilot / use Excel Copilot": this assistant IS the Copilot equivalent — just execute the user's intent. Don't respond with a plan that says "use Copilot to do X"; just do X.
+
+DIRTY-DATA PREPROCESSING RULES (critical — prevents silent wrong-answer bugs):
+
+When the workbook snapshot shows a column with dtype [text] but values that LOOK numeric (e.g. '1,234', '50%', '$100', '(500)', '1.234,56'), the aggregation handlers (groupSum, topN, rankColumn, percentOfTotal, pareto, histogram, frequencyDistribution, and any greaterThan/lessThan condition) will silently produce wrong results if you use the column as-is. The parse utilities inside the handlers will recover most cases automatically — but for reliability, propose a `coerceDataType` step BEFORE any numeric aggregation on such columns.
+  Example trigger: snapshot shows "Amount [text]" with sample values ["$1,234", "$5,678", "$2,345"]
+  → Step 1: coerceDataType on "Amount" column with targetType="number"
+  → Step 2: the actual aggregation (groupSum, topN, etc.)
+
+When a column is going to be used as a MATCH KEY (matchRecords, extractMatchedToNewRow, reorderRows with equals/contains, lateralSpreadDuplicates), propose a `cleanupText` step first with operations=['trim','normalizeWhitespace'] UNLESS the data is visibly clean in the snapshot. Common dirty-match failures:
+  - Trailing whitespace from copy-paste: "דוד " vs "דוד"
+  - RTL/LRM marks from Hebrew/Arabic web sources
+  - NBSP (non-breaking space) from HTML-to-Excel conversions
+  These look identical to a human but break equality checks. The handlers' normalizeString utility recovers most, but `cleanupText` first is belt-and-suspenders.
+
+LOCALE-AWARE DATE HANDLING:
+- The "User date format" hint tells you which date format the user expects.
+- When emitting dates into `writeValues` or date formulas, ALWAYS use that format consistently. Never mix dd/mm/yyyy with mm/dd/yyyy in the same plan.
+- When the user's existing data appears in a DIFFERENT format than the locale hint (e.g. Hebrew user has mm/dd/yyyy dates imported from US), ASK the user (responseType="message") which format the EXISTING data uses before generating anything — don't guess.
+- The date-consuming handlers (fillSeries, forecast, aging) auto-detect format where possible via parseDateFlexible, but ambiguous dates like 04/05/2026 will default to dd/mm/yyyy unless the locale hint says otherwise.
 
 EXAMPLES OF responseType "message":
 - "What can you do?" → explain capabilities
@@ -568,11 +697,16 @@ def _build_retry_messages(
 
     system = f"""You are AI Assistant For Excel. Respond with ONE JSON object only.
 
+LANGUAGE RULE: `message`, `summary`, `description`, `optionLabel` are ALWAYS written in
+English (canonical, stable). If the user wrote in a non-English language (e.g. Hebrew),
+ALSO fill the `*Localized` fields with faithful translations. If the user wrote in English,
+OMIT the `*Localized` fields entirely.
+
 FORMAT A — for questions/greetings:
-{{"responseType":"message","message":"<your reply>","plans":null}}
+{{"responseType":"message","message":"<reply_english>","messageLocalized":"<translated_or_omit>","plans":null}}
 
 FORMAT B — for spreadsheet operations:
-{{"responseType":"plans","message":"<overview>","plans":[{{"optionLabel":"Option A","plan":{{"planId":"1","createdAt":"","userRequest":"","summary":"<what it does>","steps":[{{"id":"step_1","description":"<what>","action":"<actionName>","params":{{}}}}],"confidence":0.9}}}}]}}
+{{"responseType":"plans","message":"<overview_english>","messageLocalized":"<translated_or_omit>","plans":[{{"optionLabel":"Option A: <name_english>","optionLabelLocalized":"<translated_or_omit>","plan":{{"planId":"1","createdAt":"","userRequest":"","summary":"<what_english>","summaryLocalized":"<translated_or_omit>","steps":[{{"id":"step_1","description":"<what_english>","descriptionLocalized":"<translated_or_omit>","action":"<actionName>","params":{{}}}}],"confidence":0.9}}}}]}}
 
 Available actions: {actions_str}
 
@@ -580,7 +714,7 @@ RULES:
 - "action" must be EXACTLY one of the listed actions above — copy verbatim, never invent or paraphrase
 - If no single action fits, compose the task from multiple steps using actions from the list
 - "params" must contain the action's parameters
-- Reply in the SAME language as the user (default English). All human-readable text (message, summary, step descriptions, option labels) must be in the user's language
+- Action names, param keys, param values, sheet names, formulas, and range addresses stay in English / their original form — only prose prose translates into `*Localized` fields
 - Extract ranges from [[...]] tokens — use the address inside, not the brackets
 - NO prose, NO markdown — ONLY the JSON object"""
 
@@ -653,12 +787,45 @@ _ACTION_OUTPUTS: dict[str, frozenset[str]] = {
     "splitByGroup": frozenset({"sheetCount"}),
     # addSlicer
     "addSlicer": frozenset({"slicerName"}),
+    # lateralSpreadDuplicates — outputs the NEW (widened) range address and dup metrics
+    "lateralSpreadDuplicates": frozenset({"outputRange", "duplicateGroupCount", "duplicateRowCount"}),
+    # extractMatchedToNewRow — outputs the new range (may have extra rows) and match counts
+    "extractMatchedToNewRow": frozenset({"outputRange", "matchedRowCount"}),
+    # reorderRows — outputs the same range (in-place reorder) + how many rows moved
+    "reorderRows": frozenset({"range", "movedRowCount"}),
+    # fillSeries — outputs the range + how many cells were filled
+    "fillSeries": frozenset({"range", "filledCount"}),
+    # insertDeleteColumns — outputs range + count
+    "insertDeleteColumns": frozenset({"range", "columnCount"}),
+    # tabColor, sheetPosition — echo the sheet name
+    "tabColor": frozenset({"sheetName"}),
+    "sheetPosition": frozenset({"sheetName"}),
+    # highlightDuplicates — outputs the range
+    "highlightDuplicates": frozenset({"range"}),
+    # concatRows — outputs the column that received the joined text
+    "concatRows": frozenset({"outputRange"}),
+    # autoFitRows — outputs the range
+    "autoFitRows": frozenset({"range"}),
+    # insertBlankRows — outputs the count inserted
+    "insertBlankRows": frozenset({"rowsInserted"}),
+    # --- batch 4 (analytical primitives) ---
+    # tieredFormula — outputs the output column range
+    "tieredFormula": frozenset({"outputRange"}),
+    # histogram — outputs bin/count block + (optional) chartName
+    "histogram": frozenset({"outputRange", "chartName"}),
+    # forecast — outputs projection block + (optional) chartName
+    "forecast": frozenset({"outputRange", "chartName"}),
+    # aging — outputs the annotated column range
+    "aging": frozenset({"outputRange"}),
+    # pareto — outputs the 3-col block + (optional) chartName
+    "pareto": frozenset({"outputRange", "chartName"}),
     # No outputs
     **{a: frozenset() for a in (
         "freezePanes", "hideShow", "pageLayout", "insertPicture",
         "insertShape", "insertTextBox", "addComment", "addHyperlink",
         "cloneSheetStructure",
         "deleteSheet",
+        "setSheetDirection", "calculationMode",
     )},
 }
 
@@ -884,6 +1051,11 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
         or parsed.get("reply")
         or ""
     )
+    # Display-only translation of `message` — populated when the user wrote in
+    # a non-English language. The UI prefers it over `message` when present.
+    # See the LANGUAGE RULE in the system prompt. Empty string is treated as
+    # "no translation" (we don't want to display a blank bubble).
+    message_localized = parsed.get("messageLocalized") or None
 
     # ── Handle completely off-schema output from smaller models ──────────
     # Model returned a flat dict with no responseType — try to salvage it
@@ -895,6 +1067,7 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
             return ChatResponse(
                 responseType="plans",
                 message=message or plan.summary,
+                messageLocalized=message_localized,
                 plans=[PlanOption(optionLabel="Option A", plan=plan)],
             )
         # Case 2: has param-like keys but no action → infer action
@@ -902,7 +1075,7 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
         if inferred:
             normalized = _normalize_param_keys(parsed)
             # Remove non-param keys
-            for k in ("message", "response", "content", "text", "reply",
+            for k in ("message", "messageLocalized", "response", "content", "text", "reply",
                        "match_columns", "source_sheet", "target_sheet"):
                 normalized.pop(k, None)
             normalized["action"] = inferred
@@ -910,6 +1083,7 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
             return ChatResponse(
                 responseType="plans",
                 message=message or plan.summary,
+                messageLocalized=message_localized,
                 plans=[PlanOption(optionLabel="Option A", plan=plan)],
             )
         # Case 3: has tool_calls → extract first function call
@@ -928,11 +1102,17 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
                     return ChatResponse(
                         responseType="plans",
                         message=message or plan.summary,
+                        messageLocalized=message_localized,
                         plans=[PlanOption(optionLabel="Option A", plan=plan)],
                     )
         # Case 4: has a message-like field but no responseType → treat as message
         if message.strip():
-            return ChatResponse(responseType="message", message=message, plan=None)
+            return ChatResponse(
+                responseType="message",
+                message=message,
+                messageLocalized=message_localized,
+                plan=None,
+            )
 
     # ── Standard schema paths ───────────────────────────────────────────
     if not response_type:
@@ -956,7 +1136,13 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
                 plan_data = _normalize_param_keys(plan_data)
                 plan = _fill_plan_defaults(plan_data, request)
                 label = opt.get("optionLabel", f"Option {chr(65 + i)}")
-                options.append(PlanOption(optionLabel=label, plan=plan))
+                # Display-only translation of `optionLabel`. UIs prefer it when set.
+                label_localized = opt.get("optionLabelLocalized") or None
+                options.append(PlanOption(
+                    optionLabel=label,
+                    optionLabelLocalized=label_localized,
+                    plan=plan,
+                ))
             except Exception as exc:
                 # Skip the bad option but keep the good ones — one hallucinated
                 # action in option B should not throw away options A and C.
@@ -987,6 +1173,7 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
             return ChatResponse(
                 responseType="plans",
                 message=message or "Here are a few approaches:",
+                messageLocalized=message_localized,
                 plans=options,
             )
 
@@ -998,6 +1185,7 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
         return ChatResponse(
             responseType="plans",
             message=message or plan.summary,
+            messageLocalized=message_localized,
             plans=[option],
         )
 
@@ -1005,7 +1193,12 @@ def _parse_response(text: str, request: ChatRequest) -> ChatResponse:
     if not message.strip():
         raise ValueError("LLM returned empty message")
 
-    return ChatResponse(responseType="message", message=message, plan=None)
+    return ChatResponse(
+        responseType="message",
+        message=message,
+        messageLocalized=message_localized,
+        plan=None,
+    )
 
 
 async def _log_interaction_safe(
@@ -1016,9 +1209,9 @@ async def _log_interaction_safe(
 ) -> None:
     """Log to the feedback DB — never let DB errors break the chat flow."""
     try:
-        from ..db import log_interaction
+        from ..persistence.factory import get_repositories
 
-        await log_interaction(
+        await get_repositories().interactions.log_interaction(
             interaction_id=interaction_id,
             user_message=request.userMessage,
             active_sheet=request.activeSheet,
@@ -1091,34 +1284,39 @@ async def _persist_conversation_turn(request: ChatRequest, result: ChatResponse)
     import uuid as _uuid
 
     try:
-        from ..db import append_conv_message, create_conversation
+        from ..persistence.factory import get_repositories
 
+        conv_repo = get_repositories().conversations
         conv_id = request.conversationId
         if not conv_id:
             # Title from the first user message, trimmed.
             title = request.userMessage.strip().splitlines()[0][:60] or "New chat"
-            conv_id = await create_conversation(title)
+            conv_id = await conv_repo.create(title)
 
         # Save the user message first
         user_msg_id = request.userMessageId or str(_uuid.uuid4())
         range_tokens = None
         if request.rangeTokens:
             range_tokens = [{"address": t.address, "sheetName": t.sheetName} for t in request.rangeTokens]
-        await append_conv_message(
+        await conv_repo.append_message(
             conversation_id=conv_id, message_id=user_msg_id, role="user",
             content=request.userMessage, range_tokens=range_tokens,
         )
 
-        # Save the assistant message (may carry a plan)
+        # Save the assistant message (may carry a plan). Persist the
+        # user-visible text: `messageLocalized` when present (Hebrew/other
+        # non-English turns), otherwise canonical English. This way, when
+        # the user reloads the conversation they see what they saw live.
         assistant_msg_id = str(_uuid.uuid4())
         plan_json: object | None = None
         if result.plans and len(result.plans) > 0:
             plan_json = result.plans[0].plan.model_dump(mode="json")
         elif result.plan:
             plan_json = result.plan.model_dump(mode="json")
-        await append_conv_message(
+        persisted_content = result.messageLocalized or result.message
+        await conv_repo.append_message(
             conversation_id=conv_id, message_id=assistant_msg_id, role="assistant",
-            content=result.message, plan=plan_json,
+            content=persisted_content, plan=plan_json,
         )
 
         result.conversationId = conv_id

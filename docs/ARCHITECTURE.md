@@ -35,7 +35,7 @@ flowchart TB
         CapStore["CapabilityStore — search_capabilities()"]
         ExStore["ExampleStore — search_examples()"]
         Chroma["ChromaDB (PersistentClient)"]
-        Embed["SentenceTransformer\nall-MiniLM-L6-v2"]
+        Embed["SentenceTransformer\nparaphrase-multilingual-MiniLM-L12-v2"]
     end
 
     subgraph Storage["Persistent Storage"]
@@ -383,7 +383,7 @@ flowchart LR
     end
 
     subgraph Embedding
-        ST["SentenceTransformer\nall-MiniLM-L6-v2"]
+        ST["SentenceTransformer\nparaphrase-multilingual-MiniLM-L12-v2"]
     end
 
     subgraph ChromaDB
@@ -469,7 +469,7 @@ flowchart TB
             Uvicorn["Uvicorn (1 worker)"]
             FastAPI["FastAPI App"]
             Static["./static/ (built React app)"]
-            Model["all-MiniLM-L6-v2\n(bundled ~87MB)"]
+            Model["paraphrase-multilingual-MiniLM-L12-v2\n(bundled ~420MB)"]
         end
 
         PVC["PVC 2Gi (RWO)"]

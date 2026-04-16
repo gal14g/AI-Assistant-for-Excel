@@ -128,5 +128,45 @@ async function handler(
   };
 }
 
-registry.register(meta, handler as any);
+// ── Legacy-Excel fallback (ExcelApi < 1.9) ────────────────────────────────────
+// WorksheetPageLayout is 1.9+. Below that, Office.js offers no programmatic
+// handle on margins, orientation, paper size, or print area. `showGridlines`
+// and `sheet.getRange(...).printArea` don't exist on 1.3 either. The correct
+// behavior is a graceful skip — page layout is print-only and doesn't affect
+// on-screen data; the plan should keep running. We emit a descriptive
+// success with a warning so the audit trail shows what was skipped.
+async function fallback(
+  _context: Excel.RequestContext,
+  params: PageLayoutParams,
+  options: ExecutionOptions,
+): Promise<StepResult> {
+  if (options.dryRun) {
+    return {
+      stepId: "",
+      status: "success",
+      message: "Would skip page-layout (legacy fallback; requires ExcelApi 1.9+).",
+    };
+  }
+
+  options.onProgress?.("Legacy-Excel mode: page layout unavailable, skipping...");
+
+  const requested: string[] = [];
+  if (params.margins) requested.push("margins");
+  if (params.orientation) requested.push(`orientation=${params.orientation}`);
+  if (params.paperSize) requested.push(`paperSize=${params.paperSize}`);
+  if (params.printArea) requested.push(`printArea=${params.printArea}`);
+  if (params.showGridlines !== undefined) requested.push(`showGridlines=${params.showGridlines}`);
+  if (params.printGridlines !== undefined) requested.push(`printGridlines=${params.printGridlines}`);
+
+  return {
+    stepId: "",
+    status: "success",
+    message:
+      `Page layout update skipped — WorksheetPageLayout requires ExcelApi 1.9+. ` +
+      `Requested: ${requested.join(", ") || "(nothing)"}. Configure manually via File › Page Setup ` +
+      `(legacy-Excel fallback).`,
+  };
+}
+
+registry.register(meta, handler as any, fallback as any);
 export { meta };

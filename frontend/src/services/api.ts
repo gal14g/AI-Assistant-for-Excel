@@ -59,7 +59,11 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   responseType: "message" | "plan" | "plans";
+  /** Canonical English reply — used for logs/persistence. */
   message: string;
+  /** Display-only translation of `message`. UIs prefer this when set.
+   *  See the LANGUAGE RULE in backend/app/services/chat_service.py. */
+  messageLocalized?: string;
   plan?: ExecutionPlan;
   plans?: PlanOption[];
   interactionId?: string;

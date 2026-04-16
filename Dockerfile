@@ -64,8 +64,22 @@ WORKDIR /app
 # Copy pre-built virtual environment from deps stage
 COPY --from=deps /deps/venv ./venv
 
-# Copy backend source
+# Copy backend source (includes bundled embedding model under backend/models/)
 COPY backend/ .
+
+# Safety net: if the bundled embedding model folder is missing from the build
+# context (e.g. clone without Git LFS), try to download it at build time.
+# Requires network access at build. Fails fast with a clear error if neither
+# the bundled folder nor network access is available — this keeps the image
+# self-contained for air-gapped runtime (HF_HUB_OFFLINE=1).
+ARG EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2
+RUN set -eu; \
+    if [ ! -f "/app/models/${EMBEDDING_MODEL}/config.json" ]; then \
+      echo "[docker] embedding model not bundled, downloading ${EMBEDDING_MODEL}"; \
+      python scripts/download_embedding_model.py --model "${EMBEDDING_MODEL}" --no-verify; \
+    else \
+      echo "[docker] embedding model already bundled at /app/models/${EMBEDDING_MODEL}/"; \
+    fi
 
 # Copy built frontend into ./static (FastAPI serves this at "/" in OpenShift mode)
 COPY --from=frontend-build /build/dist ./static
@@ -85,8 +99,10 @@ ENV OPENSHIFT=true \
     LLM_MODEL=gpt-4o \
     LLM_API_KEY="" \
     LLM_BASE_URL="" \
-    LLM_MAX_TOKENS=4096 \
+    LLM_MAX_TOKENS=8192 \
     LLM_TEMPERATURE=0.1 \
+    EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2 \
+    CAPABILITY_TOP_K=30 \
     ANONYMIZED_TELEMETRY=False \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1

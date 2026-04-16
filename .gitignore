@@ -58,8 +58,25 @@ Thumbs.db
 *.swo
 *~
 
+# ─── Dev tooling (per-developer, not part of runtime) ────────────────────────
+# Claude Code permissions allowlist — varies per machine, never read by the app
+.claude/
+
 # ─── Vector DB (ChromaDB) ─────────────────────────────────────────────────────
 backend/data/
+
+# ─── ML model weights (big binaries) ─────────────────────────────────────────
+# The sentence-transformer model weights (safetensors, pytorch_bin, etc.) are
+# downloaded on first run by backend/scripts/download_embedding_model.py.
+# Committing them would blow past GitHub's 100 MB per-file limit. Config /
+# tokenizer JSON files in the model dir ARE checked in.
+backend/models/**/*.safetensors
+backend/models/**/*.bin
+backend/models/**/*.onnx
+backend/models/**/*.h5
+backend/models/**/*.pt
+backend/models/**/*.pth
+backend/models/**/*.msgpack
 
 # ─── Misc ─────────────────────────────────────────────────────────────────────
 *.log

@@ -86,7 +86,9 @@ export const MessageBubble: React.FC<Props> = React.memo(({ message }) => {
                 Plan · {message.plan.steps.length} step{message.plan.steps.length !== 1 ? "s" : ""}
               </div>
               {message.plan.steps.map((step, i) => (
-                <div key={step.id} className="cc-msg-plan-inline-step">{i + 1}. {step.description}</div>
+                <div key={step.id} className="cc-msg-plan-inline-step" dir="auto">
+                  {i + 1}. {step.descriptionLocalized || step.description}
+                </div>
               ))}
             </div>
           )}

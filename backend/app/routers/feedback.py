@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from ..db import log_choice, get_interaction
+from ..persistence.factory import get_repositories
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -29,7 +29,8 @@ class FeedbackRequest(BaseModel):
 @router.post("/feedback")
 @limiter.limit("30/minute")
 async def record_feedback(request: Request, body: FeedbackRequest):
-    await log_choice(
+    repos = get_repositories()
+    await repos.interactions.log_choice(
         interaction_id=body.interactionId,
         chosen_plan_id=body.chosenPlanId,
         action=body.action,
@@ -38,7 +39,7 @@ async def record_feedback(request: Request, body: FeedbackRequest):
     # Promote applied interactions into the few-shot example pool
     if body.action == "applied":
         try:
-            interaction = await get_interaction(body.interactionId)
+            interaction = await repos.interactions.get_interaction(body.interactionId)
             if interaction and interaction.get("plans_json"):
                 from ..services.example_store import add_user_example
 

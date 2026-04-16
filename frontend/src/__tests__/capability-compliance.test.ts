@@ -116,6 +116,8 @@ describe("Full-column range clipping (getUsedRange)", () => {
     "spillFormula.ts",    // writes formula to single cell, reads back result — not user data
     "subtotals.ts",       // loads from resolveRange which is already bounded by user
     "fuzzyMatch.ts",      // uses getUsedRange on source ranges
+    "addComment.ts",      // fallback only: loads a single-cell getOffsetRange, not user data
+    "addDropdownControl.ts", // fallback only: loads a single-cell getOffsetRange, not user data
   ];
 
   for (const file of VALUE_LOADERS) {

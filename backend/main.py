@@ -87,13 +87,47 @@ app.include_router(conversations.router)
 @app.on_event("startup")
 async def startup_event():
     """Initialise vector stores, example store, and feedback database."""
-    from app.db import init_db
+    from app.persistence.factory import get_repositories, get_vector_store
     from app.services.capability_store import init_store
     from app.services.example_store import init_example_store
 
+    # Relational: SQLite (default) or Postgres, per settings.database_url.
+    await get_repositories().initialize()
+    # Vector: ChromaDB (default) or pgvector, per settings.vector_store_url.
+    get_vector_store().initialize()
+
+    # Seed the capability + example collections (idempotent).
     init_store()
-    await init_db()
     await init_example_store()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Release persistence resources on shutdown.
+
+    Both the relational repositories and the vector store own long-lived
+    resources:
+      - `SqliteRepositories` — an aiosqlite connection
+      - `PostgresRepositories` — an asyncpg pool
+      - `PgVectorStore`       — an asyncpg pool + a background event-loop thread
+
+    Skipping the vector-store close leaks the background thread + pool, which
+    Kubernetes then has to SIGKILL on pod termination (truncating in-flight
+    writes). Each close is guarded so one failure can't mask the others.
+    """
+    from app.persistence.factory import get_repositories, get_vector_store
+
+    try:
+        await get_repositories().close()
+    except Exception:  # pragma: no cover — shutdown best-effort
+        logger.exception("Error closing repositories during shutdown")
+
+    try:
+        close = getattr(get_vector_store(), "close", None)
+        if callable(close):
+            close()
+    except Exception:  # pragma: no cover — shutdown best-effort
+        logger.exception("Error closing vector store during shutdown")
 
 
 @app.get("/health")

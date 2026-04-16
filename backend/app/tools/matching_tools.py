@@ -676,7 +676,12 @@ def run_semantic_match(
             errors=[f"Key column '{right_key}' not found in sheet '{right.name}'."],
         )
 
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    # Use the app's configured embedding model (resolves to the bundled copy
+    # under backend/models/ in air-gapped deployments) instead of a hardcoded
+    # HF id that would bypass HF_HUB_OFFLINE and fail to load.
+    from ..persistence.embedding import resolve_model_path
+
+    model = SentenceTransformer(resolve_model_path())
     left_keys = left_df[left_key].astype(str).str.strip().tolist()
     right_keys = right_df[right_key].astype(str).str.strip().tolist()
 

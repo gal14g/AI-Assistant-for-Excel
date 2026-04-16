@@ -54,7 +54,7 @@ The build is multi-stage:
 1. Node builds the React add-in with `FRONTEND_URL` baked into `manifest.xml`
 2. Python installs backend dependencies into a venv
 3. Final slim image = backend + `./static/` (built frontend) + bundled
-   `all-MiniLM-L6-v2` embedding model (~87 MB). No network calls at runtime.
+   `paraphrase-multilingual-MiniLM-L12-v2` embedding model (~420 MB, multilingual — Hebrew + 50 languages). No network calls at runtime.
 
 If your cluster can't reach your registry directly, configure an image pull
 secret:

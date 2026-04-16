@@ -77,5 +77,25 @@ import "./quickFormat";
 import "./refreshPivot";
 import "./pivotCalculatedField";
 import "./conditionalFormula";
+import "./lateralSpreadDuplicates";
+// --- batch 3 (row reshape + sheet ops + series generation) ---
+import "./extractMatchedToNewRow";
+import "./reorderRows";
+import "./fillSeries";
+import "./insertDeleteColumns";
+import "./setSheetDirection";
+import "./tabColor";
+import "./sheetPosition";
+import "./autoFitRows";
+import "./calculationMode";
+import "./highlightDuplicates";
+import "./concatRows";
+import "./insertBlankRows";
+// --- batch 4 (analytical primitives) ---
+import "./tieredFormula";
+import "./histogram";
+import "./forecast";
+import "./aging";
+import "./pareto";
 
 export { registry } from "../capabilityRegistry";

@@ -56,8 +56,11 @@ export const PlanPreview: React.FC<Props> = React.memo(({
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 16 }}>⚡</span>
+          {/* Prefer localized translation when the planner emitted one.
+             Canonical English `summary` remains the source of truth for logs/
+             persistence; this only affects what the user sees. */}
           <span dir="auto" style={{ fontWeight: 600, fontSize: 14, color: "#242424" }}>
-            {plan.summary}
+            {plan.summaryLocalized || plan.summary}
           </span>
         </div>
         <span style={{
@@ -85,9 +88,13 @@ export const PlanPreview: React.FC<Props> = React.memo(({
               {i + 1}
             </div>
             <div style={{ flex: 1 }}>
-              <span dir="auto" style={{ fontSize: 13, color: "#242424" }}>{step.description}</span>
+              <span dir="auto" style={{ fontSize: 13, color: "#242424" }}>
+                {step.descriptionLocalized || step.description}
+              </span>
+              {/* marginInlineStart instead of marginLeft: follows writing direction
+                 so the action badge sits after the description in both LTR and RTL. */}
               <span style={{
-                marginLeft: 6, fontSize: 10, color: "#ffffff",
+                marginInlineStart: 6, fontSize: 10, color: "#ffffff",
                 backgroundColor: "#5b5fc7", padding: "1px 6px", borderRadius: 4,
                 fontWeight: 500,
               }}>
@@ -136,7 +143,9 @@ export const PlanPreview: React.FC<Props> = React.memo(({
         {canUndo && (
           <button onClick={onUndo} style={secondaryBtn(false)}>Undo</button>
         )}
-        <button onClick={onCancel} disabled={isExecuting} style={{ ...secondaryBtn(isExecuting), marginLeft: "auto" }}>
+        {/* marginInlineStart: auto pushes Dismiss to the trailing edge
+           (right in LTR, left in RTL). */}
+        <button onClick={onCancel} disabled={isExecuting} style={{ ...secondaryBtn(isExecuting), marginInlineStart: "auto" }}>
           Dismiss
         </button>
       </div>

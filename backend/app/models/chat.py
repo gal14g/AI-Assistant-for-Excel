@@ -78,13 +78,18 @@ class ChatRequest(BaseModel):
 
 
 class PlanOption(BaseModel):
-    optionLabel: str       # e.g. "Option A: Use SUMIF formulas"
+    optionLabel: str       # Canonical English, e.g. "Option A: Use SUMIF formulas"
+    # Display-only translation (Hebrew / Spanish / …). UIs prefer this when set.
+    # See the LANGUAGE RULE in services/chat_service.py system prompt.
+    optionLabelLocalized: Optional[str] = None
     plan: ExecutionPlan
 
 
 class ChatResponse(BaseModel):
     responseType: Literal["message", "plan", "plans"]
     message: str
+    # Display-only translation of `message`. See PlanOption.optionLabelLocalized.
+    messageLocalized: Optional[str] = None
     plan: Optional[ExecutionPlan] = None           # single plan (backward compat)
     plans: Optional[list[PlanOption]] = None        # multiple options
     interactionId: Optional[str] = None             # DB interaction ID for feedback

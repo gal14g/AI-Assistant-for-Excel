@@ -64,5 +64,36 @@ async function handler(
   };
 }
 
-registry.register(meta, handler as any);
+// ── Legacy-Excel fallback (ExcelApi < 1.7) ────────────────────────────────────
+// WorksheetFreezePanes requires 1.7. Before that, Office.js offers no
+// programmatic freeze. We can't simulate the split-scrolling behavior
+// through any other primitive, so we gracefully skip with a warning — the
+// user can freeze manually via View › Freeze Panes. Status=success because
+// this is cosmetic and shouldn't abort a data plan.
+async function fallback(
+  _context: Excel.RequestContext,
+  params: FreezePanesParams,
+  options: ExecutionOptions,
+): Promise<StepResult> {
+  if (options.dryRun) {
+    return {
+      stepId: "",
+      status: "success",
+      message: `Would skip freeze at ${params.cell} (legacy fallback; requires ExcelApi 1.7+).`,
+    };
+  }
+
+  options.onProgress?.("Legacy-Excel mode: freeze panes unavailable, skipping...");
+
+  return {
+    stepId: "",
+    status: "success",
+    message:
+      `Freeze panes at ${params.cell} skipped — WorksheetFreezePanes requires ExcelApi 1.7+ ` +
+      `(Excel 2019 / 2021 / Microsoft 365). Use View › Freeze Panes manually ` +
+      `(legacy-Excel fallback).`,
+  };
+}
+
+registry.register(meta, handler as any, fallback as any);
 export { meta };

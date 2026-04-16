@@ -1,14 +1,15 @@
 """
-Example Store – dynamic few-shot example retrieval via vector search.
+Example Store — dynamic few-shot example retrieval via vector search.
 
-Replaces hardcoded few-shot examples with a ChromaDB-backed store that:
-1. Seeds curated examples on first startup
-2. Retrieves the most relevant examples for each user query
-3. Promotes real user-approved interactions into the example pool
+Replaces hardcoded few-shot examples with a two-tier store:
+  - `few_shot_examples` collection in the `VectorStore` holds the user
+    message embeddings for nearest-neighbour lookup.
+  - The `FewShotRepository` (SQLite or Postgres) stores the full pairs
+    (user message + assistant JSON response) keyed by the same IDs.
 
-User messages are embedded into a ChromaDB collection. Full example data
-(user message + assistant JSON response) lives in SQLite. At query time,
-ChromaDB finds the closest user messages, then SQLite returns the full pairs.
+At query time the vector store returns the best-matching IDs; the
+repository returns the full pairs. Both the vector store and the repo
+are chosen at startup via the persistence factory (Item 5).
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-_collection = None
 _ready = False
 
 # ── Seed examples ────────────────────────────────────────────────────────────
@@ -162,56 +162,157 @@ SEED_EXAMPLES: list[tuple[str, str]] = [
         "Make me a list of dates for the next week with a column to mark hours",
         '{"responseType":"plans","message":"Here are two options for creating your date list with an hours column.","plans":[{"optionLabel":"Option A: Simple date list","plan":{"planId":"gen-dates-a","createdAt":"2026-04-01T00:00:00Z","userRequest":"Make me a list of dates for the next week with a column to mark hours","summary":"Write dates for the next 7 days in column A with an empty hours column in B","steps":[{"id":"step_1","description":"Write date headers and 7 days of dates with empty hours column","action":"writeValues","params":{"range":"A1:B8","values":[["Date","Hours"],["01/04/2026",""],["02/04/2026",""],["03/04/2026",""],["04/04/2026",""],["05/04/2026",""],["06/04/2026",""],["07/04/2026",""]]},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}]}',
     ),
+    # ── Hebrew examples ──────────────────────────────────────────────────────
+    # These anchor the canonical-English + `*Localized` pattern for the LLM.
+    # `message`, `summary`, `description`, `optionLabel` are ALWAYS English;
+    # `messageLocalized`, `summaryLocalized`, `descriptionLocalized`,
+    # `optionLabelLocalized` carry the Hebrew translation for display.
+    # See the LANGUAGE RULE in chat_service.py.
+    # 28. Hebrew — greeting (pure message path)
+    (
+        "היי מה קורה",
+        '{"responseType":"message","message":"Hi! I\'m your Excel assistant. Tell me what you\'d like to do with your spreadsheet.","messageLocalized":"היי! אני העוזר שלך ל-Excel. ספר לי מה תרצה לעשות בגיליון האלקטרוני שלך.","plans":null}',
+    ),
+    # 29. Hebrew — sort descending
+    (
+        "מיין את [[גיליון1!A:B]] לפי עמודה B בסדר יורד",
+        '{"responseType":"plan","message":"I\'ll sort the data in גיליון1!A:B by column B in descending order.","messageLocalized":"אמיין את הנתונים בגיליון1!A:B לפי עמודה B בסדר יורד.","plan":{"planId":"ex-he-sort","createdAt":"2026-04-01T00:00:00Z","userRequest":"מיין את גיליון1!A:B לפי עמודה B בסדר יורד","summary":"Sort גיליון1!A:B by column B descending","summaryLocalized":"מיון גיליון1!A:B לפי עמודה B בסדר יורד","steps":[{"id":"step_1","description":"Sort גיליון1!A:B by column B descending","descriptionLocalized":"מיין את גיליון1!A:B לפי עמודה B בסדר יורד","action":"sortRange","params":{"range":"גיליון1!A:B","sortFields":[{"columnIndex":1,"ascending":false}],"hasHeaders":true},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 30. Hebrew — pivot + chart chaining
+    (
+        "צור טבלת ציר מ-[[מכירות!A1:D500]] עם שורות לפי אזור וסכום מכירות, ואז צור תרשים",
+        '{"responseType":"plan","message":"I\'ll create a PivotTable from the מכירות sheet with rows by region and SUM of sales as values, then build a column chart from it.","messageLocalized":"אצור טבלת ציר מגיליון מכירות כשהשורות הן האזור והערכים הם סכום המכירות, ולאחר מכן אצור תרשים עמודות.","plan":{"planId":"ex-he-pivot-chart","createdAt":"2026-04-01T00:00:00Z","userRequest":"טבלת ציר + תרשים ממכירות","summary":"PivotTable by region → column chart","summaryLocalized":"טבלת ציר לפי אזור → תרשים עמודות","steps":[{"id":"step_1","description":"Create PivotTable: rows=region, values=SUM(sales)","descriptionLocalized":"צור טבלת ציר: שורות=אזור, ערכים=SUM(מכירות)","action":"createPivot","params":{"sourceRange":"מכירות!A1:D500","rows":["אזור"],"values":[{"field":"מכירות","summarizeBy":"sum"}]},"dependsOn":[]},{"id":"step_2","description":"Create a column chart from the PivotTable","descriptionLocalized":"צור תרשים עמודות מטבלת הציר","action":"createChart","params":{"dataRange":"{{step_1.outputRange}}","chartType":"columnClustered"},"dependsOn":["step_1"]}],"preserveFormatting":true,"confidence":0.92,"warnings":[]}}',
+    ),
+    # 31. Hebrew — find-replace date format
+    (
+        "החלף את כל המופעים של '31/12/2025' ב-'01/01/2026' בגיליון חשבוניות",
+        '{"responseType":"plan","message":"I\'ll replace every occurrence of \'31/12/2025\' with \'01/01/2026\' in the חשבוניות sheet.","messageLocalized":"אחליף את כל המופעים של \'31/12/2025\' ב-\'01/01/2026\' בגיליון חשבוניות.","plan":{"planId":"ex-he-fr","createdAt":"2026-04-01T00:00:00Z","userRequest":"החלף 31/12/2025 → 01/01/2026 בחשבוניות","summary":"Replace 31/12/2025 → 01/01/2026 in חשבוניות","summaryLocalized":"החלפת 31/12/2025 → 01/01/2026 בגיליון חשבוניות","steps":[{"id":"step_1","description":"Find and replace \'31/12/2025\' with \'01/01/2026\' in חשבוניות","descriptionLocalized":"מצא והחלף \'31/12/2025\' ב-\'01/01/2026\' בחשבוניות","action":"findReplace","params":{"find":"31/12/2025","replace":"01/01/2026","sheetName":"חשבוניות"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 32. Hebrew — conditional format
+    (
+        "צבע באדום את כל התאים בעמודה [[דוח!C:C]] שגדולים מ-1000",
+        '{"responseType":"plan","message":"I\'ll add a conditional-formatting rule that colors cells red in column C of the דוח sheet when the value is greater than 1000.","messageLocalized":"אוסיף כלל עיצוב מותנה שצובע באדום את התאים בעמודה C בגיליון דוח כאשר הערך גדול מ-1000.","plan":{"planId":"ex-he-cf","createdAt":"2026-04-01T00:00:00Z","userRequest":"צבע באדום תאים בדוח!C:C מעל 1000","summary":"Red conditional format for דוח!C:C > 1000","summaryLocalized":"עיצוב מותנה אדום לתאים > 1000 בדוח!C:C","steps":[{"id":"step_1","description":"Apply red fill when C > 1000","descriptionLocalized":"החל עיצוב מותנה אדום כאשר C > 1000","action":"addConditionalFormat","params":{"range":"דוח!C:C","ruleType":"cellValue","operator":"greaterThan","values":[1000],"format":{"fillColor":"#ffcccc","fontColor":"#c50f1f"}},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.93,"warnings":[]}}',
+    ),
+    # 33. Hebrew — formula filldown
+    (
+        "הוסף נוסחת SUM בעמודה D שמחברת את A, B, ו-C ומלא עד שורה 100",
+        '{"responseType":"plan","message":"I\'ll write =SUM(A2:C2) into D2 and fill it down to row 100.","messageLocalized":"אכתוב נוסחת SUM ב-D2 שמסכמת A2:C2, ואמלא אותה עד שורה 100.","plan":{"planId":"ex-he-sum","createdAt":"2026-04-01T00:00:00Z","userRequest":"SUM(A:C) ב-D2 עד שורה 100","summary":"SUM formula in column D, filled to row 100","summaryLocalized":"נוסחת SUM בעמודה D עם מילוי עד שורה 100","steps":[{"id":"step_1","description":"Write =SUM(A2:C2) in D2 and fill down to row 100","descriptionLocalized":"כתוב =SUM(A2:C2) ב-D2 ומלא עד שורה 100","action":"writeFormula","params":{"cell":"D2","formula":"=SUM(A2:C2)","fillDown":98},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.97,"warnings":[]}}',
+    ),
+    # 34. Hebrew — text cleanup chain
+    (
+        "נקה רווחים מיותרים ב-[[לקוחות!B:B]] ואז הסר כפילויות לפי עמודה B",
+        '{"responseType":"plan","message":"I\'ll clean whitespace in column B, then remove duplicate rows by that same column.","messageLocalized":"אנקה רווחים בעמודה B ולאחר מכן אסיר שורות כפולות לפי אותה עמודה.","plan":{"planId":"ex-he-clean","createdAt":"2026-04-01T00:00:00Z","userRequest":"ניקוי רווחים + הסרת כפילויות בלקוחות!B","summary":"Clean column B, then remove duplicates","summaryLocalized":"ניקוי עמודה B ואז הסרת כפילויות","steps":[{"id":"step_1","description":"Clean whitespace in column B","descriptionLocalized":"נקה רווחים מיותרים בעמודה B","action":"cleanupText","params":{"range":"לקוחות!B:B","operations":["trim","normalizeWhitespace"]},"dependsOn":[]},{"id":"step_2","description":"Remove duplicate rows by column B","descriptionLocalized":"הסר שורות כפולות לפי עמודה B","action":"removeDuplicates","params":{"range":"לקוחות!A:Z","columnIndexes":[1]},"dependsOn":["step_1"]}],"preserveFormatting":true,"confidence":0.93,"warnings":[]}}',
+    ),
+    # 35. Hebrew — duplicate-sidecar layout (lateralSpreadDuplicates)
+    (
+        "כל ערך שמופיע ב-[[Sheet5!B:B]] יותר מפעם אחת, תעביר את כל השורה שלו להיות משמאל לשורה הראשונה בה מופיע",
+        '{"responseType":"plan","message":"I\'ll lay every duplicate of column B next to its first occurrence horizontally — the original first-occurrence rows stay where they are, and each subsequent duplicate gets lifted out of its vertical position and pasted as a new block of columns on the left of the anchor row. Single-step, no temp sheets.","messageLocalized":"אפרוש כל שורה שערך עמודה B שלה חוזר — השורה הראשונה של כל ערך נשארת במקומה, וכל שורה כפולה עוברת להיות בבלוק של עמודות משמאל לשורה הראשונה שלה. צעד אחד, בלי גיליון עזר.","plan":{"planId":"ex-he-sidecar","createdAt":"2026-04-01T00:00:00Z","userRequest":"duplicate sidecar on Sheet5!B","summary":"Lateral-spread duplicates of Sheet5!B next to first occurrence","summaryLocalized":"פרישה צידית של כפילויות עמודה B בגיליון5 ליד המופע הראשון","steps":[{"id":"step_1","description":"Spread duplicates of column B horizontally, left of each first occurrence","descriptionLocalized":"פרוש את כפילויות עמודה B אופקית, משמאל לכל מופע ראשון","action":"lateralSpreadDuplicates","params":{"sourceRange":"Sheet5!A:Z","keyColumnIndex":1,"hasHeaders":true,"direction":"left","removeOriginalDuplicates":true},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 36. within-row match extraction (extractMatchedToNewRow)
+    (
+        "in [[Sheet1!A1:F100]] when column name equals column name2, move number2 and price2 to a new row below with the shared name",
+        '{"responseType":"plan","message":"I\'ll split each row where name equals name2 into two rows: the first keeps the primary side (name, number, price); the new row below it carries the shared name plus number2 and price2. One step, one sync.","plan":{"planId":"ex-extract-match","createdAt":"2026-04-01T00:00:00Z","userRequest":"split rows where name==name2 into two rows","summary":"Extract matched-name rows into a new row below","steps":[{"id":"step_1","description":"When column name (0) equals column name2 (3), move columns number2 (4) and price2 (5) to a new row below, duplicating the name value","action":"extractMatchedToNewRow","params":{"sourceRange":"Sheet1!A1:F100","keyColumnIndexA":0,"keyColumnIndexB":3,"extractColumnIndexes":[4,5],"hasHeaders":true,"caseSensitive":false},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.93,"warnings":[]}}',
+    ),
+    # 37. reorderRows — move matching to top
+    (
+        "move all rows in [[Sheet1!A1:D200]] where column C equals 'urgent' to the top",
+        '{"responseType":"plan","message":"I\'ll reorder the rows so every row with \'urgent\' in column C sits at the top, with the rest keeping their original order.","plan":{"planId":"ex-reorder","createdAt":"2026-04-01T00:00:00Z","userRequest":"move urgent rows to top","summary":"Move rows with column C == \'urgent\' to the top","steps":[{"id":"step_1","description":"Reorder rows — move matching to top","action":"reorderRows","params":{"range":"Sheet1!A1:D200","mode":"moveMatching","conditionColumn":2,"condition":"equals","conditionValue":"urgent","destination":"top","hasHeaders":true},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.95,"warnings":[]}}',
+    ),
+    # 38. fillSeries — numbering
+    (
+        "number rows 1 to 100 in column A of [[Sheet1!A1:A100]]",
+        '{"responseType":"plan","message":"I\'ll write the sequence 1..100 into A1:A100.","plan":{"planId":"ex-fillseries","createdAt":"2026-04-01T00:00:00Z","userRequest":"number 1-100 in column A","summary":"fillSeries 1..100 in A1:A100","steps":[{"id":"step_1","description":"Fill number series 1..100","action":"fillSeries","params":{"range":"Sheet1!A1:A100","seriesType":"number","start":1,"step":1},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.98,"warnings":[]}}',
+    ),
+    # 39. Hebrew — RTL sheet direction
+    (
+        "הפוך את הגיליון הזה לימין-לשמאל",
+        '{"responseType":"plan","message":"I\'ll request RTL display for the active sheet. Office.js has no API for this — the handler will return a warning and you\'ll need to toggle View > Sheet Right-to-Left manually.","messageLocalized":"אבקש תצוגת ימין-לשמאל לגיליון הפעיל. ל-Office.js אין API לכך — המערכת תחזיר אזהרה ותצטרך להפעיל ידנית דרך תצוגה > גיליון מימין לשמאל.","plan":{"planId":"ex-rtl","createdAt":"2026-04-01T00:00:00Z","userRequest":"make this sheet RTL","summary":"Request RTL direction for the active sheet","summaryLocalized":"בקשת כיוון ימין-לשמאל לגיליון הפעיל","steps":[{"id":"step_1","description":"Set sheet direction to RTL","descriptionLocalized":"הגדר את כיוון הגיליון לימין-לשמאל","action":"setSheetDirection","params":{"direction":"rtl"},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.9,"warnings":[]}}',
+    ),
+    # 40. Hebrew — self-join row-relation comparison (LET + array-MATCH).
+    # Teaches the pattern: "for each row, find a DIFFERENT row of the same
+    # group whose column value has a relationship to this row's value (e.g.
+    # previous-day end date), then compare a third column between the two".
+    # This is the pattern the LLM consistently fumbled into XLOOKUP / single-
+    # key VLOOKUP / or in-row comparison; the correct shape is
+    # IFERROR(LET(MATCH(1, array-criteria, 0), INDEX(...))).
+    (
+        "לכל כפילות שיש כאן: [[Sheet6!A:A]] , אם הערך כאן: [[Sheet6!B:B]] = לערך כאן [[Sheet6!C:C]] פחות אחד, וגם בשורה של הערך פחות אחד בעמודה הזו: [[Sheet6!D:D]] מופיע ״נציבותי״ ואז בשורה של הערך מופיע משהו שלא שווה ״נציבותי״ אז תרשום בעמודה e עזיבה, אחרת אם מופיע משהו שלא שווה ״נציבותי״ ואז בשורה של הערך מופיע ״נציבותי״ תרשום בעמודה e קליטה",
+        '{"responseType":"plan","message":"Self-join comparison: for every row I find a PREVIOUS row of the same key (column A) whose end-date (C) is one day before this row\'s start-date (B), then compare column D between the two rows. The formula uses IFERROR(LET(MATCH(1, multi-criteria, 0), INDEX(...))) — array criteria let MATCH locate the previous row by two conditions at once, and IFERROR turns no-match rows into empty strings instead of #N/A.","messageLocalized":"השוואת שורה-לשורה באותה קבוצה: לכל שורה אני מחפש שורה קודמת עם אותו ערך ב-A, שתאריך הסיום שלה (C) הוא יום לפני תאריך ההתחלה (B) של השורה הנוכחית, ואז משווה את עמודה D בין שתי השורות. הנוסחה משתמשת ב-IFERROR(LET(MATCH(1, קריטריון מערכי, 0), INDEX(...))) — קריטריון המערך מאפשר ל-MATCH למצוא את השורה הקודמת לפי שני תנאים בו-זמנית, ו-IFERROR גורם לשורות ללא התאמה להחזיר ריק במקום #N/A.","plan":{"planId":"ex-he-selfjoin","createdAt":"2026-04-01T00:00:00Z","userRequest":"self-join עזיבה/קליטה בעמודה E של Sheet6","summary":"Write self-join comparison formula into Sheet6!E2 and fill down","summaryLocalized":"כתיבת נוסחת השוואה self-join ב-Sheet6!E2 עם מילוי כלפי מטה","steps":[{"id":"step_1","description":"Write the self-join formula into E2 and fill down. Uses LET+MATCH with multi-criteria array (A matches + C=B-1), then compares the previous row\'s D against the current row\'s D. IFERROR wraps the lookup so rows without a predecessor return \\"\\".","descriptionLocalized":"כתוב נוסחת self-join ב-E2 ומלא כלפי מטה. NOTE מ-LET+MATCH עם קריטריון מערכי (A זהה + C=B-1), ואז משווה את D של השורה הקודמת ל-D של השורה הנוכחית. IFERROR עוטף את החיפוש כדי שורות ללא קודמת יחזירו ריק.","action":"writeFormula","params":{"cell":"Sheet6!E2","formula":"=IFERROR(IF(AND(INDEX(D$2:D$100,MATCH(1,(A$2:A$100=A2)*(C$2:C$100=B2-1),0))=\\"נציבותי\\",D2<>\\"נציבותי\\"),\\"עזיבה\\",IF(AND(INDEX(D$2:D$100,MATCH(1,(A$2:A$100=A2)*(C$2:C$100=B2-1),0))<>\\"נציבותי\\",D2=\\"נציבותי\\"),\\"קליטה\\",\\"\\")),\\"\\")","fillDown":98},"dependsOn":[]}],"preserveFormatting":true,"confidence":0.9,"warnings":["Formula uses INDEX/MATCH with multi-criteria array — works natively on Excel 365. On Excel 2016/2019 the MATCH(1, array, 0) needs Ctrl+Shift+Enter (array-formula entry) or it silently evaluates to #N/A. Deliberately LET-free so it doesn\'t break with #NAME? on older Excel.","Adjust the A$2:A$100 / C$2:C$100 / D$2:D$100 bounds to the real data range before or after writing.","Assumes B and C are native date-typed cells (not text). If dates are text-typed, the C=B-1 arithmetic fails silently, producing #N/A."]}}',
+    ),
 ]
+
+
+_COLLECTION = "few_shot_examples"
+
+# Bump this whenever SEED_EXAMPLES contents change in a way that should
+# override previously-seeded rows (e.g. a prompt-format migration like the
+# canonical-English + `*Localized` rewrite). `init_example_store` detects
+# older versions present in the vector store and purges them before
+# re-seeding, so the LLM never sees stale (mis-formatted) few-shots.
+_SEED_VERSION = "v4"
 
 
 async def init_example_store() -> None:
     """
-    Initialise the few-shot example ChromaDB collection and seed it.
-
-    Safe to call multiple times — idempotent.
+    Seed the few-shot example pool in both the repository (full pairs) and
+    the vector store (user-message embeddings). Idempotent.
     """
-    global _collection, _ready  # noqa: PLW0603
+    global _ready  # noqa: PLW0603
 
-    from .chroma_client import get_chroma_client, get_embedding_fn
-    from ..db import insert_few_shot_example
+    from ..persistence.factory import get_repositories, get_vector_store
 
-    client = get_chroma_client()
-    embedding_fn = get_embedding_fn()
+    repos = get_repositories()
+    store = get_vector_store()
 
-    _collection = client.get_or_create_collection(
-        name="few_shot_examples",
-        embedding_function=embedding_fn,
-    )
+    # ── Migration: purge any earlier-version seeds from the vector store ──
+    # Pre-v2 the IDs were `seed_0`, `seed_1`, … (no version). Pre-v3 used
+    # `seed_v2_…`. Any time _SEED_VERSION bumps, we want the old rows gone
+    # so retrieval can't resurrect stale few-shots. The check is a bounded
+    # ID scan (enough to cover every historical seed), collect matches,
+    # delete. Orphaned DB rows are harmless: retrieval goes through the
+    # vector store first, so DB entries not referenced from vectors are
+    # never surfaced.
+    unversioned_ids = [f"seed_{i}" for i in range(100)]
+    prior_versions = [f"seed_v{v}_{i}" for v in ("2", "3") for i in range(100)]
+    candidate_stale = unversioned_ids + prior_versions
+    legacy_found = store.get_by_ids(_COLLECTION, candidate_stale)
+    if legacy_found:
+        stale_ids = [r["id"] for r in legacy_found]
+        store.delete(_COLLECTION, stale_ids)
+        logger.info("Removed %d pre-%s few-shot seed(s).", len(stale_ids), _SEED_VERSION)
 
-    # Seed: insert examples into both SQLite and ChromaDB (idempotent)
-    existing_ids = set(_collection.get()["ids"]) if _collection.count() > 0 else set()
+    # Vector store: figure out which seed IDs are already present by
+    # fetching the list and skipping duplicates. We cap seeding at the
+    # length of SEED_EXAMPLES so re-seeding is cheap on hot restarts.
+    seed_ids = [f"seed_{_SEED_VERSION}_{i}" for i in range(len(SEED_EXAMPLES))]
+    existing = store.get_by_ids(_COLLECTION, seed_ids)
+    existing_ids = {r["id"] for r in existing}
+
     new_ids: list[str] = []
     new_docs: list[str] = []
     new_metas: list[dict[str, str]] = []
 
     for i, (user_msg, assistant_resp) in enumerate(SEED_EXAMPLES):
-        example_id = f"seed_{i}"
+        example_id = seed_ids[i]
 
-        # SQLite (INSERT OR IGNORE — idempotent)
-        await insert_few_shot_example(
+        # Repo (INSERT OR IGNORE — idempotent)
+        await repos.few_shot.insert(
             example_id=example_id,
             user_message=user_msg,
             assistant_response=assistant_resp,
             source="seed",
         )
 
-        # ChromaDB — only add if not already present
         if example_id not in existing_ids:
             new_ids.append(example_id)
             new_docs.append(user_msg)
             new_metas.append({"sqlite_id": example_id, "source": "seed"})
 
     if new_ids:
-        _collection.add(ids=new_ids, documents=new_docs, metadatas=new_metas)
-        logger.info("Seeded %d new few-shot examples into ChromaDB.", len(new_ids))
+        store.upsert(_COLLECTION, new_ids, new_docs, new_metas)
+        logger.info("Seeded %d new few-shot examples.", len(new_ids))
     else:
-        logger.info("Few-shot example store already seeded (%d examples).", _collection.count())
+        logger.info("Few-shot example store already seeded.")
 
     _ready = True
 
@@ -227,11 +328,11 @@ async def add_user_example(
     assistant_response: str,
 ) -> None:
     """Promote an applied interaction into the few-shot example pool."""
-    from ..db import insert_few_shot_example
+    from ..persistence.factory import get_repositories, get_vector_store
 
     example_id = f"user_{interaction_id}"
 
-    await insert_few_shot_example(
+    await get_repositories().few_shot.insert(
         example_id=example_id,
         user_message=user_message,
         assistant_response=assistant_response,
@@ -239,43 +340,40 @@ async def add_user_example(
         interaction_id=interaction_id,
     )
 
-    if _collection is not None:
-        # Check if already in ChromaDB
-        existing = _collection.get(ids=[example_id])
-        if not existing["ids"]:
-            _collection.add(
-                ids=[example_id],
-                documents=[user_message],
-                metadatas=[{"sqlite_id": example_id, "source": "user"}],
-            )
-            logger.info("Promoted interaction %s as few-shot example.", interaction_id)
+    store = get_vector_store()
+    existing = store.get_by_ids(_COLLECTION, [example_id])
+    if not existing:
+        store.upsert(
+            _COLLECTION,
+            [example_id],
+            [user_message],
+            [{"sqlite_id": example_id, "source": "user"}],
+        )
+        logger.info("Promoted interaction %s as few-shot example.", interaction_id)
 
 
 async def search_examples(query: str, top_k: int | None = None) -> list[dict]:
     """
     Retrieve the most relevant few-shot examples for a query.
 
-    Returns list of {"user_message": ..., "assistant_response": ...}
+    Returns a list of {"user_message": ..., "assistant_response": ...}
     ordered by relevance.
     """
-    from ..db import get_few_shot_examples_by_ids
+    from ..persistence.factory import get_repositories, get_vector_store
 
     k = top_k or settings.few_shot_top_k
 
-    if not _ready or _collection is None or _collection.count() == 0:
-        # Fallback: return first k seed examples in order
+    if not _ready:
+        # Fallback: return first k seed examples in order.
         return [
             {"user_message": u, "assistant_response": a}
             for u, a in SEED_EXAMPLES[:k]
         ]
 
-    results = _collection.query(
-        query_texts=[query],
-        n_results=min(k, _collection.count()),
-    )
-
-    if not results or not results["ids"] or not results["ids"][0]:
+    store = get_vector_store()
+    hits = store.query(_COLLECTION, query, top_k=k)
+    if not hits:
         return []
 
-    matched_ids = results["ids"][0]
-    return await get_few_shot_examples_by_ids(matched_ids)
+    matched_ids = [h["id"] for h in hits]
+    return await get_repositories().few_shot.get_by_ids(matched_ids)

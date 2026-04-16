@@ -7,6 +7,7 @@
 
 import { CapabilityMeta, SheetOpParams, StepResult, ExecutionOptions } from "../types";
 import { registry } from "../capabilityRegistry";
+import { registerInverseOp } from "../snapshot";
 
 // Register each sheet operation as a separate capability
 const sheetActions: {
@@ -60,6 +61,8 @@ for (const sa of sheetActions) {
         const newSheet = context.workbook.worksheets.add(params.sheetName);
         newSheet.load("name");
         await context.sync();
+        // Undo = delete the sheet we just created.
+        registerInverseOp({ kind: "deleteSheet", sheetName: newSheet.name });
         return {
           stepId: "",
           status: "success",
@@ -76,13 +79,17 @@ for (const sa of sheetActions) {
         if (sheetToRename.isNullObject) {
           return { stepId: "", status: "error", message: `Sheet "${params.sheetName}" not found` };
         }
-        sheetToRename.name = params.newName ?? params.sheetName;
+        const originalName = params.sheetName;
+        const newName = params.newName ?? params.sheetName;
+        sheetToRename.name = newName;
         await context.sync();
+        // Undo = rename back from the new name to the original.
+        registerInverseOp({ kind: "renameSheet", currentName: newName, restoreName: originalName });
         return {
           stepId: "",
           status: "success",
           message: `Renamed sheet to "${params.newName}"`,
-          outputs: { sheetName: params.newName ?? params.sheetName },
+          outputs: { sheetName: newName },
         };
       }
 
@@ -97,10 +104,14 @@ for (const sa of sheetActions) {
         }
         sheetToDelete.delete();
         await context.sync();
+        // NOTE: We intentionally do NOT register an inverse op for deleteSheet
+        // because restoring a deleted sheet with all its content isn't
+        // possible from the add-in side (Office.js has no sheet-undelete).
+        // Surface the non-reversibility in the message so the user knows.
         return {
           stepId: "",
           status: "success",
-          message: `Deleted sheet "${params.sheetName}"`,
+          message: `Deleted sheet "${params.sheetName}" — this action cannot be undone from the assistant. Use Ctrl+Z in Excel to restore if needed.`,
         };
       }
 
@@ -114,6 +125,8 @@ for (const sa of sheetActions) {
           copy.name = params.newName;
           await context.sync();
         }
+        // Undo = delete the copy (the original source stays).
+        registerInverseOp({ kind: "deleteSheet", sheetName: copy.name });
         return {
           stepId: "",
           status: "success",

@@ -88,7 +88,25 @@ export type StepAction =
   | "pivotCalculatedField"
   | "addDropdownControl"
   | "conditionalFormula"
-  | "spillFormula";
+  | "spillFormula"
+  | "lateralSpreadDuplicates"
+  | "extractMatchedToNewRow"
+  | "reorderRows"
+  | "fillSeries"
+  | "insertDeleteColumns"
+  | "setSheetDirection"
+  | "tabColor"
+  | "sheetPosition"
+  | "autoFitRows"
+  | "calculationMode"
+  | "highlightDuplicates"
+  | "concatRows"
+  | "insertBlankRows"
+  | "tieredFormula"
+  | "histogram"
+  | "forecast"
+  | "aging"
+  | "pareto";
 
 // ---------------------------------------------------------------------------
 // Step parameter shapes – one per action
@@ -287,8 +305,9 @@ export interface AutoFitColumnsParams {
 export interface MergeCellsParams {
   range: string;
   across?: boolean;    // merge across rows instead of full merge
-  /** Backend Pydantic alias — "mergeAcross" maps to across=true */
-  mergeType?: "merge" | "mergeAcross" | "mergeAllCells";
+  /** Backend Pydantic alias — "mergeAcross" maps to across=true.
+   *  "unmerge" splits every merged cell in the range back into individual cells. */
+  mergeType?: "merge" | "mergeAcross" | "mergeAllCells" | "unmerge";
 }
 
 export interface SetNumberFormatParams {
@@ -818,6 +837,173 @@ export interface SpillFormulaParams {
   sheetName?: string;
 }
 
+/**
+ * lateralSpreadDuplicates — "duplicate sidecar" layout.
+ *
+ * Every non-first-occurrence of `keyColumnIndex` gets lifted out of its
+ * vertical slot and dropped horizontally onto `direction` side of the
+ * first-occurrence row. Useful for side-by-side review of repeated entries
+ * (interview follow-ups, order revisions, timesheet entries per person).
+ */
+export interface LateralSpreadDuplicatesParams {
+  sourceRange: string;              // e.g. "Sheet5!A1:G100"
+  keyColumnIndex: number;           // 0-based
+  hasHeaders?: boolean;             // default true
+  direction?: "left" | "right";     // default "left"
+  removeOriginalDuplicates?: boolean; // default true
+  sheetName?: string;
+}
+
+/**
+ * extractMatchedToNewRow — within-row-duplicate extraction.
+ *
+ * When row[keyColumnIndexA] == row[keyColumnIndexB], lift the
+ * extractColumnIndexes values into a new row immediately below.
+ */
+export interface ExtractMatchedToNewRowParams {
+  sourceRange: string;
+  keyColumnIndexA: number;          // 0-based
+  keyColumnIndexB: number;          // 0-based
+  extractColumnIndexes: number[];   // 0-based
+  hasHeaders?: boolean;             // default true
+  caseSensitive?: boolean;          // default false
+  sheetName?: string;
+}
+
+export interface ReorderRowsParams {
+  range: string;
+  mode: "moveMatching" | "reverse" | "clusterByKey";
+  conditionColumn?: number;          // 0-based, required for moveMatching/clusterByKey
+  condition?:
+    | "equals" | "notEquals" | "contains" | "notContains"
+    | "blank" | "notBlank" | "greaterThan" | "lessThan";
+  conditionValue?: string | number | boolean;
+  destination?: "top" | "bottom";   // default "top" (moveMatching)
+  hasHeaders?: boolean;             // default true
+  sheetName?: string;
+}
+
+export interface FillSeriesParams {
+  range: string;
+  seriesType: "number" | "date" | "weekday" | "repeatPattern";
+  start?: string | number;
+  step?: number;
+  pattern?: (string | number | boolean)[];
+  dateUnit?: "day" | "week" | "month" | "year";
+  count?: number;
+  horizontal?: boolean;             // default false
+  sheetName?: string;
+}
+
+export interface InsertDeleteColumnsParams {
+  range: string;                    // e.g. "C:E" or "Sheet1!C:E"
+  action: "insert" | "delete";
+  shiftDirection?: "left" | "right"; // default "right"
+  sheetName?: string;
+}
+
+export interface SetSheetDirectionParams {
+  direction: "rtl" | "ltr";
+  sheetName?: string;
+}
+
+export interface TabColorParams {
+  color: string;                    // hex string, or "none" to clear
+  sheetName?: string;
+}
+
+export interface SheetPositionParams {
+  position: number;                 // 0-based
+  sheetName?: string;
+}
+
+export interface AutoFitRowsParams {
+  range?: string;
+  sheetName?: string;
+}
+
+export interface CalculationModeParams {
+  mode: "manual" | "automatic" | "automaticExceptTables";
+}
+
+export interface HighlightDuplicatesParams {
+  range: string;
+  fillColor?: string;               // default "#FFCCCC"
+  fontColor?: string;               // default "#C50F1F"
+  sheetName?: string;
+}
+
+export interface ConcatRowsParams {
+  sourceRange: string;
+  outputColumn: string;             // letter like "G" or "Sheet1!G"
+  separator?: string;               // default ", "
+  ignoreBlanks?: boolean;           // default true
+  hasHeaders?: boolean;             // default true
+  sheetName?: string;
+}
+
+export interface InsertBlankRowsParams {
+  sheetName?: string;
+  positions?: number[];             // 1-based row numbers
+  every?: number;                   // e.g. 5
+  range?: string;                   // required with every
+  count?: number;                   // default 1
+}
+
+// ── Analytical primitives (batch 4) ──────────────────────────────────────────
+
+export interface TieredFormulaTier {
+  threshold: number;
+  value: number;
+}
+
+export interface TieredFormulaParams {
+  sourceRange: string;
+  outputRange: string;
+  tiers: TieredFormulaTier[];
+  mode?: "lookup" | "tax";          // default "lookup"
+  defaultValue?: number;            // default 0
+  hasHeaders?: boolean;             // default true
+}
+
+export interface HistogramParams {
+  dataRange: string;
+  outputRange: string;
+  bins?: number[];
+  binCount?: number;
+  includeChart?: boolean;           // default true
+  chartType?: "columnClustered" | "barClustered";
+  hasHeaders?: boolean;
+  sheetName?: string;
+}
+
+export interface ForecastParams {
+  sourceRange: string;
+  outputRange: string;
+  periods: number;
+  method?: "linear" | "ets";        // default "linear"
+  includeChart?: boolean;           // default true
+  hasHeaders?: boolean;
+  sheetName?: string;
+}
+
+export interface AgingParams {
+  dateColumn: string;
+  outputColumn: string;
+  buckets?: number[];               // default [30, 60, 90]
+  referenceDate?: string;
+  hasHeaders?: boolean;
+  sheetName?: string;
+}
+
+export interface ParetoParams {
+  dataRange: string;
+  outputRange: string;
+  includeChart?: boolean;           // default true
+  hasHeaders?: boolean;
+  sheetName?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Union of all param types
 // ---------------------------------------------------------------------------
@@ -894,7 +1080,25 @@ export type StepParams =
   | PivotCalculatedFieldParams
   | AddDropdownControlParams
   | ConditionalFormulaParams
-  | SpillFormulaParams;
+  | SpillFormulaParams
+  | LateralSpreadDuplicatesParams
+  | ExtractMatchedToNewRowParams
+  | ReorderRowsParams
+  | FillSeriesParams
+  | InsertDeleteColumnsParams
+  | SetSheetDirectionParams
+  | TabColorParams
+  | SheetPositionParams
+  | AutoFitRowsParams
+  | CalculationModeParams
+  | HighlightDuplicatesParams
+  | ConcatRowsParams
+  | InsertBlankRowsParams
+  | TieredFormulaParams
+  | HistogramParams
+  | ForecastParams
+  | AgingParams
+  | ParetoParams;
 
 // ---------------------------------------------------------------------------
 // Plan step
@@ -903,8 +1107,14 @@ export type StepParams =
 export interface PlanStep {
   /** Unique step ID within the plan, e.g. "step_1" */
   id: string;
-  /** Human-readable description shown in the execution timeline */
+  /** Canonical English description shown in the execution timeline */
   description: string;
+  /**
+   * Display-only translation of `description` for non-English users.
+   * UI components prefer this when set; executor ignores it.
+   * See LANGUAGE RULE in backend/app/services/chat_service.py.
+   */
+  descriptionLocalized?: string;
   /** The action to perform */
   action: StepAction;
   /** Action-specific parameters */
@@ -927,8 +1137,10 @@ export interface ExecutionPlan {
   createdAt: string;
   /** Original natural-language user request */
   userRequest: string;
-  /** Human-readable summary of what the plan will do */
+  /** Canonical English summary of what the plan will do */
   summary: string;
+  /** Display-only translation of `summary`. See PlanStep.descriptionLocalized. */
+  summaryLocalized?: string;
   /** Ordered list of steps */
   steps: PlanStep[];
   /**
@@ -988,10 +1200,28 @@ export interface CellSnapshot {
   hasMergedCells?: boolean;
 }
 
+/**
+ * Inverse operations for structural changes that a plain value-snapshot can't
+ * reverse (creating sheets, renaming them, inserting/deleting rows or
+ * columns, changing tab colors, moving sheets, etc.). Applied during undo
+ * BEFORE the cell-value restore pass so the sheet geometry is back to what
+ * the values expect.
+ */
+export type InverseOp =
+  | { kind: "deleteSheet"; sheetName: string }
+  | { kind: "renameSheet"; currentName: string; restoreName: string }
+  | { kind: "deleteRows"; sheetName: string; rangeAddress: string }
+  | { kind: "deleteColumns"; sheetName: string; rangeAddress: string }
+  | { kind: "restoreTabColor"; sheetName: string; color: string }
+  | { kind: "restoreSheetPosition"; sheetName: string; position: number }
+  | { kind: "restoreSheetDirection"; sheetName: string; isRightToLeft: boolean };
+
 export interface PlanSnapshot {
   planId: string;
   timestamp: string;
   cells: CellSnapshot[];
+  /** Structural inverse operations to apply during undo, in reverse order. */
+  inverseOps?: InverseOp[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1010,6 +1240,8 @@ export interface RangeToken {
 
 export interface PlanOption {
   optionLabel: string;
+  /** Display-only translation of `optionLabel`. See PlanStep.descriptionLocalized. */
+  optionLabelLocalized?: string;
   plan: ExecutionPlan;
 }
 

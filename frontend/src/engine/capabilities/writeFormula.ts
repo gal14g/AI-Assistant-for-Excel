@@ -17,12 +17,18 @@
 import { CapabilityMeta, WriteFormulaParams, StepResult, ExecutionOptions } from "../types";
 import { registry } from "../capabilityRegistry";
 import { resolveRange } from "./rangeUtils";
+import { isSetSupported } from "../apiSupport";
+import { usesDynamicArray, rewriteDynamicArrayFormula } from "./fallbacks/dynamicArrayRewrite";
+import { clipFullColumnRefs } from "./fallbacks/clipFullColumnRefs";
 
 const meta: CapabilityMeta = {
   action: "writeFormula",
   description: "Write a formula to a cell, optionally fill down",
   mutates: true,
   affectsFormatting: false,
+  // writeFormula itself is 1.1-safe (range.formulas exists at baseline).
+  // Dynamic-array functions in the formula body are detected at runtime and
+  // rewritten inline — no registry-level fallback dispatch needed.
 };
 
 async function handler(
@@ -30,13 +36,52 @@ async function handler(
   params: WriteFormulaParams,
   options: ExecutionOptions
 ): Promise<StepResult> {
-  const { cell, formula, fillDown } = params;
+  const { cell, fillDown } = params;
+  let { formula } = params;
+
+  // ── Full-column reference clipping ─────────────────────────────────────────
+  // Prevents `=SUMPRODUCT((A:A="X")*B:B)` from evaluating against 1M rows.
+  // Less disastrous than the same pattern in spillFormula (writeFormula never
+  // spills 1M cells — it writes to a single cell + optional fillDown), but
+  // still worth clipping for performance and plan determinism.
+  let clipNote = "";
+  try {
+    // Skip if formula doesn't look like a real formula (defensive)
+    if (typeof formula === "string" && formula.trim().startsWith("=")) {
+      const clip = await clipFullColumnRefs(context, formula, null);
+      if (clip.clippedCount > 0) {
+        formula = clip.formula;
+        clipNote = ` (auto-clipped ${clip.clippedCount} full-column ref${clip.clippedCount === 1 ? "" : "s"}: ${clip.clippedRefs.join(", ")})`;
+        options.onProgress?.(clipNote.trim());
+      }
+    }
+  } catch {
+    // Never let clipping errors abort the write; formula goes through as-is.
+  }
+
+  // ── Dynamic-array compatibility guard ─────────────────────────────────────
+  // If the formula uses FILTER/UNIQUE/XLOOKUP/SORT/SEQUENCE and this Excel
+  // doesn't support dynamic arrays (ExcelApi 1.11+), rewrite in place.
+  let rewriteNote = "";
+  if (usesDynamicArray(formula) && !isSetSupported("1.11")) {
+    const rewritten = rewriteDynamicArrayFormula(formula);
+    formula = rewritten.formula;
+    if (rewritten.changes.length) {
+      rewriteNote = ` (compatibility rewrite: ${rewritten.changes.join(", ")})`;
+      options.onProgress?.(
+        `Legacy-Excel rewrite: ${rewritten.changes.join(", ")}`,
+      );
+    }
+    if (rewritten.warnings.length) {
+      for (const w of rewritten.warnings) options.onProgress?.(`Warning: ${w}`);
+    }
+  }
 
   if (options.dryRun) {
     return {
       stepId: "",
       status: "success",
-      message: `Would write formula ${formula} to ${cell}${fillDown ? ` and fill down ${fillDown} rows` : ""}`,
+      message: `Would write formula ${formula} to ${cell}${fillDown ? ` and fill down ${fillDown} rows` : ""}${rewriteNote}`,
     };
   }
 
@@ -80,7 +125,7 @@ async function handler(
   return {
     stepId: "",
     status: "success",
-    message: `Wrote formula to ${cell}${rowInfo}`,
+    message: `Wrote formula to ${cell}${rowInfo}${rewriteNote}${clipNote}`,
     outputs: { cell },
   };
 }

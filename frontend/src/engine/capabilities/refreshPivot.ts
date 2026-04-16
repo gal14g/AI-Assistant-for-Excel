@@ -16,6 +16,9 @@ const meta: CapabilityMeta = {
   description: "Refresh a PivotTable or all PivotTables on a sheet",
   mutates: false,
   affectsFormatting: false,
+  // Worksheet.pivotTables + PivotTable.refresh() are ExcelApi 1.3+.
+  // (Programmatic pivot creation/editing needs 1.8 — see createPivot.)
+  requiresApiSet: "ExcelApi 1.3",
 };
 
 async function handler(

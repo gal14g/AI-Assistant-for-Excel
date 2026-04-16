@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "excel-copilot"
+version = "1.1.0"
+description = "AI Assistant For Excel — natural language spreadsheet assistant with add-in and MCP bridge."
+requires-python = ">=3.11"
+readme = { file = "../README.md", content-type = "text/markdown" }
+dynamic = ["dependencies"]
+
+[project.scripts]
+# Registered so any MCP client can point at it with `"command": "excel-copilot-mcp"`.
+# The script entry invokes backend/mcp_server.py::main which opens a stdio
+# MCP server bridged to the xlwings desktop-Excel runtime.
+excel-copilot-mcp = "mcp_server:main"
+
+[tool.setuptools]
+# The backend directory is the package root — `main.py`, `mcp_server.py`, and
+# the `app/` package all live here.
+py-modules = ["main", "mcp_server"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

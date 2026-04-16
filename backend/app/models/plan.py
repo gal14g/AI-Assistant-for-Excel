@@ -91,6 +91,26 @@ class StepAction(str, Enum):
     addDropdownControl = "addDropdownControl"
     conditionalFormula = "conditionalFormula"
     spillFormula = "spillFormula"
+    # --- New actions (batch 3) ---
+    lateralSpreadDuplicates = "lateralSpreadDuplicates"
+    extractMatchedToNewRow = "extractMatchedToNewRow"
+    reorderRows = "reorderRows"
+    fillSeries = "fillSeries"
+    insertDeleteColumns = "insertDeleteColumns"
+    setSheetDirection = "setSheetDirection"
+    tabColor = "tabColor"
+    sheetPosition = "sheetPosition"
+    autoFitRows = "autoFitRows"
+    calculationMode = "calculationMode"
+    highlightDuplicates = "highlightDuplicates"
+    concatRows = "concatRows"
+    insertBlankRows = "insertBlankRows"
+    # --- New actions (batch 4 — analytical primitives) ---
+    tieredFormula = "tieredFormula"
+    histogram = "histogram"
+    forecast = "forecast"
+    aging = "aging"
+    pareto = "pareto"
 
 
 # --- Step parameter models ---
@@ -697,12 +717,230 @@ class SpillFormulaParams(BaseModel):
     sheetName: Optional[str] = None
 
 
+class LateralSpreadDuplicatesParams(BaseModel):
+    """Lift every non-first-occurrence row of `keyColumnIndex` out of vertical
+    position and paste it horizontally into columns on `direction` side of the
+    first-occurrence row. Produces a 'duplicate sidecar' layout used to review
+    repeated entries side-by-side (e.g. interview follow-ups, order revisions)."""
+    sourceRange: str               # Full data range (e.g. "Sheet5!A1:G100")
+    keyColumnIndex: int = Field(..., ge=0)   # 0-based column with the dedupe key
+    hasHeaders: Optional[bool] = True
+    direction: Optional[Literal["left", "right"]] = "left"
+    removeOriginalDuplicates: Optional[bool] = True
+    sheetName: Optional[str] = None
+
+
+class ExtractMatchedToNewRowParams(BaseModel):
+    """When row[keyColumnIndexA] == row[keyColumnIndexB] (same value in two
+    designated columns of the SAME row), extract the values at
+    `extractColumnIndexes` into a new row inserted below. The shared key value
+    is duplicated into the column-A position of the new row so the extracted
+    record is identifiable. Original positions of extracted cells are blanked
+    on the matched row. Useful for normalizing side-by-side comparison data
+    (interview first/second round, email primary/secondary, etc.)."""
+    sourceRange: str
+    keyColumnIndexA: int = Field(..., ge=0)
+    keyColumnIndexB: int = Field(..., ge=0)
+    extractColumnIndexes: list[int] = Field(..., min_length=1)
+    hasHeaders: Optional[bool] = True
+    caseSensitive: Optional[bool] = False
+    sheetName: Optional[str] = None
+
+
+class ReorderRowsParams(BaseModel):
+    """Reorder rows in a range. Mode 'moveMatching' moves rows whose
+    `conditionColumn` satisfies `condition`/`conditionValue` to the
+    destination (top/bottom of range or just after a specified row index).
+    Mode 'reverse' flips the row order. Mode 'clusterByKey' groups rows
+    sharing the same value in `conditionColumn` together, preserving first-
+    appearance order of the key."""
+    range: str
+    mode: Literal["moveMatching", "reverse", "clusterByKey"]
+    conditionColumn: Optional[int] = Field(None, ge=0)   # 0-based
+    condition: Optional[Literal["equals", "notEquals", "contains", "notContains", "blank", "notBlank", "greaterThan", "lessThan"]] = None
+    conditionValue: Optional[Union[str, int, float]] = None
+    destination: Optional[Literal["top", "bottom"]] = "top"
+    hasHeaders: Optional[bool] = True
+    sheetName: Optional[str] = None
+
+
+class FillSeriesParams(BaseModel):
+    """Write a generated series into a range. seriesType: 'number' increments
+    by step (default 1); 'date' steps by `dateUnit` days/weeks/months; 'weekday'
+    skips Sat/Sun; 'repeatPattern' cycles through `pattern` values."""
+    range: str
+    seriesType: Literal["number", "date", "weekday", "repeatPattern"]
+    start: Optional[Union[str, int, float]] = 1
+    step: Optional[Union[int, float]] = 1
+    pattern: Optional[list[Union[str, int, float, bool]]] = None  # for repeatPattern
+    dateUnit: Optional[Literal["day", "week", "month", "year"]] = "day"
+    count: Optional[int] = None     # if omitted, fill the entire range
+    horizontal: Optional[bool] = False
+    sheetName: Optional[str] = None
+
+
+class InsertDeleteColumnsParams(BaseModel):
+    """Insert or delete columns. range is a column-letter range like 'C:E'
+    (or a cell-address range from which the column span is inferred)."""
+    range: str
+    action: Literal["insert", "delete"]
+    shiftDirection: Optional[Literal["left", "right"]] = "right"
+    sheetName: Optional[str] = None
+
+
+class SetSheetDirectionParams(BaseModel):
+    """Request sheet right-to-left / left-to-right display. NOTE: Office.js
+    has no API for this; the add-in handler returns a descriptive warning so
+    the user can toggle manually via View > Sheet Right-to-Left. In MCP mode
+    (xlwings desktop bridge), this will actually set the COM property."""
+    direction: Literal["rtl", "ltr"]
+    sheetName: Optional[str] = None
+
+
+class TabColorParams(BaseModel):
+    """Set the color of a worksheet's tab. `color` is a hex string (e.g. '#FF0000')
+    or 'none' to clear."""
+    color: str
+    sheetName: Optional[str] = None
+
+
+class SheetPositionParams(BaseModel):
+    """Move a sheet to position `position` (0-based) in the tab order."""
+    position: int = Field(..., ge=0)
+    sheetName: Optional[str] = None
+
+
+class AutoFitRowsParams(BaseModel):
+    """Auto-fit row heights for the given range, or the used range if omitted."""
+    range: Optional[str] = None
+    sheetName: Optional[str] = None
+
+
+class CalculationModeParams(BaseModel):
+    """Set workbook calculation mode. 'manual' disables auto-recalc; 'automatic'
+    re-enables it; 'automaticExceptTables' auto-recalcs everything except
+    data-tables."""
+    mode: Literal["manual", "automatic", "automaticExceptTables"]
+
+
+class HighlightDuplicatesParams(BaseModel):
+    """Add a conditional-formatting rule that highlights duplicate values in
+    the given range. Combines addConditionalFormat + COUNTIF in one step."""
+    range: str
+    fillColor: Optional[str] = "#FFCCCC"
+    fontColor: Optional[str] = "#C50F1F"
+    sheetName: Optional[str] = None
+
+
+class ConcatRowsParams(BaseModel):
+    """Concatenate the cells of each row in `sourceRange` into a single cell
+    in `outputColumn`, joined by `separator`. Uses TEXTJOIN under the hood so
+    the output formulas stay live as source values change."""
+    sourceRange: str
+    outputColumn: str              # e.g. "G" or "Sheet1!G"
+    separator: Optional[str] = ", "
+    ignoreBlanks: Optional[bool] = True
+    hasHeaders: Optional[bool] = True
+    sheetName: Optional[str] = None
+
+
+class InsertBlankRowsParams(BaseModel):
+    """Insert blank rows either at a set of explicit row numbers or at a fixed
+    interval (every Nth row within a range)."""
+    sheetName: Optional[str] = None
+    positions: Optional[list[int]] = None  # 1-based row numbers to insert before
+    every: Optional[int] = Field(None, ge=1)            # e.g. every 5 rows
+    range: Optional[str] = None            # confines "every" mode to this range
+    count: Optional[int] = 1               # how many blank rows per insertion
+
+
+# ── Analytical primitives (batch 4) ────────────────────────────────────────
+
+
+class TieredFormulaTier(BaseModel):
+    """One tier: values ≥ `threshold` use `value`. In 'tax' mode, `value`
+    is a rate applied to the slice of income above `threshold`."""
+    threshold: Union[int, float]
+    value: Union[int, float]
+
+
+class TieredFormulaParams(BaseModel):
+    """Apply tiered logic (tax brackets, grading bands, commission tiers) via a
+    generated IFS / nested-IF formula. Mode 'lookup' picks the tier's value
+    whose threshold ≤ source cell. Mode 'tax' computes cumulative tier tax —
+    `value` for each tier is a rate applied to the slice of the source
+    between that tier's threshold and the next tier's threshold."""
+    sourceRange: str                # single-column range of inputs
+    outputRange: str                # single-column range for results
+    tiers: list[TieredFormulaTier] = Field(..., min_length=1)
+    mode: Optional[Literal["lookup", "tax"]] = "lookup"
+    defaultValue: Optional[Union[int, float]] = 0
+    hasHeaders: Optional[bool] = True
+
+
+class HistogramParams(BaseModel):
+    """Build a histogram of `dataRange`. Either supply explicit `bins` edges
+    or request `binCount` automatic bins (Sturges' rule). Emits the FREQUENCY
+    formula + a column chart (unless `includeChart=false`)."""
+    dataRange: str                  # single-column numeric data
+    outputRange: str                # top-left for the bin-count output (2 cols wide: bin, count)
+    bins: Optional[list[Union[int, float]]] = None
+    binCount: Optional[int] = Field(None, ge=1)
+    includeChart: Optional[bool] = True
+    chartType: Optional[Literal["columnClustered", "barClustered"]] = "columnClustered"
+    hasHeaders: Optional[bool] = True
+    sheetName: Optional[str] = None
+
+
+class ForecastParams(BaseModel):
+    """Project future values from a time series. `sourceRange` is two columns:
+    dates in col 1, values in col 2. Emits either a FORECAST.LINEAR or
+    FORECAST.ETS formula for each of the next `periods` date steps. Writes a
+    continuation table + optional line chart."""
+    sourceRange: str
+    outputRange: str                # top-left for the projection table (2 cols: date, forecast)
+    periods: int = Field(..., ge=1)
+    method: Optional[Literal["linear", "ets"]] = "linear"
+    includeChart: Optional[bool] = True
+    hasHeaders: Optional[bool] = True
+    sheetName: Optional[str] = None
+
+
+class AgingParams(BaseModel):
+    """Bucket dates into age buckets (e.g. 0-30, 31-60, 61-90, 90+). Each
+    bucket's upper-bound day count is supplied via `buckets` (sorted asc);
+    open-ended last bucket is labelled `{lastBucket}+`. Writes a formula
+    column next to the source."""
+    dateColumn: str                 # single column of dates
+    outputColumn: str               # letter like "G" or "Sheet1!G"
+    buckets: Optional[list[int]] = None     # default [30, 60, 90]
+    referenceDate: Optional[str] = None     # e.g. "01/04/2026" — default TODAY()
+    hasHeaders: Optional[bool] = True
+    sheetName: Optional[str] = None
+
+
+class ParetoParams(BaseModel):
+    """Pareto (80/20) analysis: sort by value descending, write the sorted
+    labels + values + cumulative-percentage columns, and produce a combo
+    chart (column for value, line for cumulative %). Useful for identifying
+    the top drivers of any aggregated measure."""
+    dataRange: str                  # 2 cols: label + value
+    outputRange: str                # top-left of the output block (label, value, cum %)
+    includeChart: Optional[bool] = True
+    hasHeaders: Optional[bool] = True
+    sheetName: Optional[str] = None
+
+
 # --- Plan step ---
 
 
 class PlanStep(BaseModel):
     id: str = Field(..., min_length=1)
     description: str = Field(..., min_length=1)
+    # Display-only translation of `description` for non-English users.
+    # The canonical `description` is always English; UIs prefer this when set.
+    # See the LANGUAGE RULE in services/chat_service.py system prompt.
+    descriptionLocalized: Optional[str] = None
     action: StepAction
     params: dict  # Validated further based on action
     dependsOn: Optional[list[str]] = None
@@ -716,6 +954,8 @@ class ExecutionPlan(BaseModel):
     createdAt: str
     userRequest: str
     summary: str
+    # Display-only translation of `summary`. See PlanStep.descriptionLocalized.
+    summaryLocalized: Optional[str] = None
     steps: list[PlanStep] = Field(..., min_length=1)
     preserveFormatting: bool = True
     confidence: float = Field(ge=0, le=1)
@@ -802,4 +1042,24 @@ ACTION_PARAM_MODELS: dict[StepAction, type[BaseModel]] = {
     StepAction.addDropdownControl:      AddDropdownControlParams,
     StepAction.conditionalFormula:      ConditionalFormulaParams,
     StepAction.spillFormula:            SpillFormulaParams,
+    # --- New actions (batch 3) ---
+    StepAction.lateralSpreadDuplicates: LateralSpreadDuplicatesParams,
+    StepAction.extractMatchedToNewRow:  ExtractMatchedToNewRowParams,
+    StepAction.reorderRows:             ReorderRowsParams,
+    StepAction.fillSeries:              FillSeriesParams,
+    StepAction.insertDeleteColumns:     InsertDeleteColumnsParams,
+    StepAction.setSheetDirection:       SetSheetDirectionParams,
+    StepAction.tabColor:                TabColorParams,
+    StepAction.sheetPosition:           SheetPositionParams,
+    StepAction.autoFitRows:             AutoFitRowsParams,
+    StepAction.calculationMode:         CalculationModeParams,
+    StepAction.highlightDuplicates:     HighlightDuplicatesParams,
+    StepAction.concatRows:              ConcatRowsParams,
+    StepAction.insertBlankRows:         InsertBlankRowsParams,
+    # --- batch 4 (analytical primitives) ---
+    StepAction.tieredFormula:           TieredFormulaParams,
+    StepAction.histogram:               HistogramParams,
+    StepAction.forecast:                ForecastParams,
+    StepAction.aging:                   AgingParams,
+    StepAction.pareto:                  ParetoParams,
 }

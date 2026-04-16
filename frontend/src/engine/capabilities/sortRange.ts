@@ -10,6 +10,7 @@
 import { CapabilityMeta, SortRangeParams, StepResult, ExecutionOptions } from "../types";
 import { registry } from "../capabilityRegistry";
 import { resolveRange } from "./rangeUtils";
+import { ensureUnmerged } from "../utils/mergedCells";
 
 const meta: CapabilityMeta = {
   action: "sortRange",
@@ -38,6 +39,15 @@ async function handler(
   options.onProgress?.("Sorting range...");
 
   const range = resolveRange(context, address);
+
+  // Office.js Range.sort.apply() errors outright if the range contains
+  // merged cells. Auto-unmerge so the sort can proceed.
+  const mergeReport = await ensureUnmerged(context, range, {
+    operation: "sortRange",
+    policy: "refuseWithError",
+  });
+  if (mergeReport.error) return mergeReport.error;
+
   const excelSortFields: Excel.SortField[] = sortFields.map((f) => ({
     key: f.columnIndex,
     ascending: f.ascending !== false,
@@ -49,7 +59,7 @@ async function handler(
   return {
     stepId: "",
     status: "success",
-    message: `Sorted ${address} by ${sortFields.length} field(s)`,
+    message: `Sorted ${address} by ${sortFields.length} field(s)${mergeReport.warning ?? ""}`,
     outputs: { range: address },
   };
 }

@@ -70,5 +70,88 @@ async function handler(
   };
 }
 
-registry.register(meta, handler as any);
+// ── Legacy-Excel fallback (ExcelApi < 1.9) ────────────────────────────────────
+// worksheet.shapes.addImage requires 1.9 and Office.js on Excel 2016 RTM has
+// no other programmatic path to embed an image (ActiveSheet.Pictures.Insert
+// is VBA-only and unreachable from Office.js sandboxed add-ins). We emit a
+// merged-cell placeholder labeled with the alt text so the user knows where
+// the picture *would* go, and can insert it manually. Success (not error) —
+// the plan shouldn't abort over a cosmetic asset that can be placed by hand.
+async function fallback(
+  context: Excel.RequestContext,
+  params: InsertPictureParams,
+  options: ExecutionOptions,
+): Promise<StepResult> {
+  const { sheetName, left, top, width, height, altText } = params;
+
+  if (options.dryRun) {
+    return {
+      stepId: "",
+      status: "success",
+      message: `Would emit picture placeholder (legacy fallback; images not renderable on this Excel).`,
+    };
+  }
+
+  options.onProgress?.("Legacy-Excel mode: images not renderable, writing placeholder cell...");
+
+  const sheet = sheetName
+    ? context.workbook.worksheets.getItem(sheetName)
+    : context.workbook.worksheets.getActiveWorksheet();
+
+  const COL_PT = 64;
+  const ROW_PT = 15;
+  const startCol = Math.max(0, Math.round((left ?? 0) / COL_PT));
+  const startRow = Math.max(0, Math.round((top ?? 0) / ROW_PT));
+  const colSpan = Math.max(2, Math.round((width ?? 128) / COL_PT));
+  const rowSpan = Math.max(2, Math.round((height ?? 60) / ROW_PT));
+
+  const block = sheet.getRangeByIndexes(startRow, startCol, rowSpan, colSpan);
+  try { block.merge(true); } catch { /* may already be merged */ }
+
+  const label = `[Image placeholder${altText ? ` — ${altText}` : ""}]`;
+  // After merge we write only the top-left cell; grid shape for block.values:
+  const grid: (string | null)[][] = [];
+  for (let r = 0; r < rowSpan; r++) {
+    const row: (string | null)[] = [];
+    for (let c = 0; c < colSpan; c++) row.push(r === 0 && c === 0 ? label : null);
+    grid.push(row);
+  }
+  try {
+    block.values = grid as unknown as (string | number | boolean)[][];
+  } catch {
+    sheet.getRangeByIndexes(startRow, startCol, 1, 1).values = [[label]];
+  }
+
+  block.format.horizontalAlignment = Excel.HorizontalAlignment.center;
+  block.format.verticalAlignment = Excel.VerticalAlignment.center;
+  block.format.fill.color = "#F3F3F3";
+  block.format.font.italic = true;
+  block.format.font.color = "#606060";
+  block.format.wrapText = true;
+
+  const sides: Excel.BorderIndex[] = [
+    Excel.BorderIndex.edgeTop,
+    Excel.BorderIndex.edgeBottom,
+    Excel.BorderIndex.edgeLeft,
+    Excel.BorderIndex.edgeRight,
+  ];
+  for (const side of sides) {
+    const b = block.format.borders.getItem(side);
+    b.style = Excel.BorderLineStyle.dash;
+    b.weight = Excel.BorderWeight.thin;
+    b.color = "#A0A0A0";
+  }
+  await context.sync();
+
+  return {
+    stepId: "",
+    status: "success",
+    message:
+      `Emitted image placeholder at row ${startRow + 1}, col ${startCol + 1} — images require ` +
+      `ExcelApi 1.9+ (worksheet.shapes.addImage). Office.js on Excel 2016 RTM has no supported ` +
+      `path to embed pixels; insert the picture manually at this cell (legacy-Excel fallback).`,
+  };
+}
+
+registry.register(meta, handler as any, fallback as any);
 export { meta };
