@@ -11,7 +11,7 @@ zero outbound internet access.
 |---|---|---|---|
 | 1 | **Office.js** | Loaded from `appsforoffice.microsoft.com` CDN in `taskpane.html` + `commands.html` | Self-host it; see §1 below |
 | 2 | **LLM API** | Configurable — most defaults hit internet | Use Ollama or an internal OpenAI-compatible gateway; see §2 |
-| 3 | **ChromaDB telemetry** | Sends anonymous events to `posthog.com` | Already disabled in `chroma_client.py` + `ANONYMIZED_TELEMETRY=False` env var |
+| 3 | **ChromaDB telemetry** | Sends anonymous events to `posthog.com` | Already disabled in `persistence/vector_chroma.py` + `ANONYMIZED_TELEMETRY=False` env var |
 | 4 | **HuggingFace Hub** | `sentence-transformers` may check model version | Already disabled via `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1` |
 | 5 | **Docker base images** | `node:20-alpine` + `python:3.11-slim` pulled from Docker Hub | Build image on an internet-connected host, then transfer; see §5 |
 | 6 | **npm + pip** | Pull packages at build time | Same — happens at build, not runtime |
@@ -95,7 +95,7 @@ at the egress firewall), no code changes needed — set `LLM_MODEL` and
 
 Two layers:
 
-1. Code: `backend/app/services/chroma_client.py` passes
+1. Code: `backend/app/persistence/vector_chroma.py` passes
    `Settings(anonymized_telemetry=False)` to `PersistentClient`.
 2. Env var: `ANONYMIZED_TELEMETRY=False` set in `Dockerfile` + `configmap.yaml`.
 
@@ -111,8 +111,9 @@ The embedding model (`paraphrase-multilingual-MiniLM-L12-v2`, ~420 MB, multiling
 - `HF_HUB_OFFLINE=1` — no HuggingFace Hub calls
 - `TRANSFORMERS_OFFLINE=1` — no `transformers` update checks
 
-Both are set in `Dockerfile` + `configmap.yaml`. `chroma_client.py` loads the
-local path directly, so `sentence-transformers` never attempts a download.
+Both are set in `Dockerfile` + `configmap.yaml`. `persistence/embedding.py`
+loads the local path directly, so `sentence-transformers` never attempts a
+download.
 
 ---
 
